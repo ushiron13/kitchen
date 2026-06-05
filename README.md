@@ -126,11 +126,48 @@ make lint
 
 ---
 
+## API エンドポイント（Phase 0c 時点）
+
+| メソッド | パス | 説明 |
+|---------|------|------|
+| GET | `/api/v1/health/live` | 生存確認 |
+| GET | `/api/v1/health/ready` | DB 疎通確認 |
+| POST | `/api/v1/foods` | 食品マスタ登録 |
+| GET | `/api/v1/foods` | 食品マスタ一覧 |
+| POST | `/api/v1/stock` | 在庫追加 |
+| GET | `/api/v1/stock` | 在庫一覧 |
+| PATCH | `/api/v1/stock/{id}` | 在庫更新 |
+| POST | `/api/v1/stock/{id}/transactions` | 消費・廃棄など記録 |
+| DELETE | `/api/v1/stock/{id}` | 在庫削除 |
+| **POST** | **`/api/v1/meal-plans`** | **在庫から献立スケルトン生成（LLM）** |
+| **GET** | **`/api/v1/meal-plans`** | **献立プラン一覧** |
+| **GET** | **`/api/v1/meal-plans/{id}`** | **献立プラン取得** |
+| **POST** | **`/api/v1/meals/{id}/recipe`** | **レシピ詳細生成（LLM）** |
+| **GET** | **`/api/v1/recipes/{id}`** | **レシピ取得** |
+
+> すべてのエンドポイントは `X-API-Key` ヘッダー認証が必要（`/health` 除く）。
+
+### 献立生成の使い方
+
+```bash
+# 1. 在庫から7日分の夕食スケルトンを生成
+curl -s -X POST https://kitchen.local/api/v1/meal-plans \
+  -H "X-API-Key: $KITCHEN_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"start_date":"2026-06-05","days":7,"meal_types":["dinner"]}' | jq .
+
+# 2. 取得した meal_id のレシピ詳細を生成
+curl -s -X POST https://kitchen.local/api/v1/meals/1/recipe \
+  -H "X-API-Key: $KITCHEN_API_KEY" | jq .
+```
+
+---
+
 ## ロードマップ
 
 - **Phase 0a** ✅ プロジェクトスキャフォールド、health エンドポイント
-- **Phase 0b** 🔲 在庫 CRUD 最小実装
-- **Phase 0c** 🔲 スケルトン献立提案 + レシピ詳細生成
+- **Phase 0b** ✅ 在庫 CRUD 最小実装
+- **Phase 0c** ✅ スケルトン献立提案 + レシピ詳細生成
 - **Phase 1** 🔲 PWA MVP（家族日常利用可能）
 - **Phase 2** 🔲 離乳食対応、画像認識、LLM 最適化
 
