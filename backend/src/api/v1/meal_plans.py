@@ -9,6 +9,7 @@ from src.core.security import verify_api_key
 from src.repositories.meal_plan import MealPlanRepository
 from src.repositories.stock import StockRepository
 from src.schemas.meal_plan import MealPlanCreate, MealPlanRead, MealRead
+from src.schemas.shopping_list import ShoppingItem, ShoppingListRead
 
 router = APIRouter(
     prefix="/meal-plans",
@@ -115,3 +116,36 @@ async def get_meal_plan(
     if plan is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Meal plan not found")
     return _plan_to_read(plan)
+
+
+@router.get("/{plan_id}/shopping-list", response_model=ShoppingListRead)
+async def get_shopping_list(
+    plan_id: int,
+    session: AsyncSession = Depends(get_session),
+) -> ShoppingListRead:
+    """献立プランの推定食材と在庫を照合して買い物リストを返す（F-MEAL-08）。"""
+    repo = MealPlanRepository(session)
+    plan = await repo.get(plan_id)
+    if plan is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Meal plan not found")
+
+    ingredient_names = await repo.get_ingredient_names(plan_id)
+
+    stock_repo = StockRepository(session)
+    stock_items = await stock_repo.list()
+    stock_map: dict[str, tuple[float, str]] = {}
+    for item in stock_items:
+        key = item.food.name.lower()
+        if key not in stock_map:
+            stock_map[key] = (item.quantity, item.unit)
+
+    items = []
+    for name in ingredient_names:
+        key = name.lower()
+        if key in stock_map:
+            qty, unit = stock_map[key]
+            items.append(ShoppingItem(name=name, in_stock=qty > 0, stock_quantity=qty, stock_unit=unit))
+        else:
+            items.append(ShoppingItem(name=name, in_stock=False))
+
+    return ShoppingListRead(meal_plan_id=plan_id, items=items)

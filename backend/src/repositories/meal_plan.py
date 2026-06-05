@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -86,3 +88,18 @@ class MealPlanRepository:
         meal.updated_at = _now()
         await self.session.flush()
         return meal
+
+    async def get_ingredient_names(self, plan_id: int) -> list[str]:
+        plan = await self.get(plan_id)
+        if plan is None:
+            return []
+        names: set[str] = set()
+        for meal in plan.meals:
+            if meal.estimated_ingredients:
+                try:
+                    for n in json.loads(meal.estimated_ingredients):
+                        if n and str(n).strip():
+                            names.add(str(n).strip())
+                except Exception:
+                    pass
+        return sorted(names)

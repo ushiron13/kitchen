@@ -1,6 +1,6 @@
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class RecipeIngredientRead(BaseModel):
@@ -28,3 +28,8 @@ class RecipeRead(BaseModel):
     updated_at: str
 
     model_config = {"from_attributes": True}
+
+
+class RecipeSuggestRequest(BaseModel):
+    food_names: list[str] = Field(..., min_length=1, max_length=10, description="提案のベースとなる食材名リスト")
+    count: int = Field(1, ge=1, le=3, description="生成するレシピ案の数")

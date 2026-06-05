@@ -62,6 +62,17 @@ async def generate_recipe_for_meal(
         except Exception:
             pass
 
+    recipe_repo = RecipeRepository(session)
+
+    # F-RECIPE-02: 同名レシピが既にあれば再利用してLLMコストを節約
+    existing = await recipe_repo.find_by_name(concept)
+    if existing:
+        await recipe_repo.increment_reuse(existing.id)
+        await meal_repo.attach_recipe(meal_id, existing.id)
+        await session.commit()
+        recipe = await recipe_repo.get(existing.id)
+        return _recipe_to_read(recipe)
+
     graph = build_recipe_graph()
     result = await graph.ainvoke({
         "concept": concept,
@@ -78,7 +89,6 @@ async def generate_recipe_for_meal(
             detail=f"Agent error: {result.get('error', 'No recipe generated')}",
         )
 
-    recipe_repo = RecipeRepository(session)
     recipe = await recipe_repo.create_from_llm(result["recipe"])
     await meal_repo.attach_recipe(meal_id, recipe.id)
     await session.commit()

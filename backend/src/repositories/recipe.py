@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -51,3 +51,43 @@ class RecipeRepository:
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def find_by_name(self, name: str) -> Optional[Recipe]:
+        """同名レシピを検索（DB再利用 F-RECIPE-02）。"""
+        stmt = (
+            select(Recipe)
+            .where(func.lower(Recipe.name) == name.lower())
+            .where(Recipe.is_archived == 0)
+            .options(selectinload(Recipe.ingredients))
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().first()
+
+    async def increment_reuse(self, recipe_id: int) -> None:
+        recipe = await self.session.get(Recipe, recipe_id)
+        if recipe:
+            recipe.reuse_count += 1
+            recipe.updated_at = _now()
+            await self.session.flush()
+
+    async def list_all(
+        self,
+        q: Optional[str] = None,
+        food_name: Optional[str] = None,
+    ) -> list[Recipe]:
+        """レシピ一覧。q=名前部分一致、food_name=食材名部分一致（F-RECIPE-03）。"""
+        stmt = (
+            select(Recipe)
+            .where(Recipe.is_archived == 0)
+            .options(selectinload(Recipe.ingredients))
+        )
+        if q:
+            stmt = stmt.where(Recipe.name.ilike(f"%{q}%"))
+        if food_name:
+            stmt = (
+                stmt.join(Recipe.ingredients)
+                .where(RecipeIngredient.raw_name.ilike(f"%{food_name}%"))
+            )
+        stmt = stmt.order_by(Recipe.created_at.desc())
+        result = await self.session.execute(stmt)
+        return list(result.scalars().unique().all())
