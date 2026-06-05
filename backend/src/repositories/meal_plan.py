@@ -30,7 +30,7 @@ class MealPlanRepository:
             start_date=data.start_date,
             end_date=end.strftime("%Y-%m-%d"),
             status="draft",
-            notes=data.notes,
+            notes=data.preferences,  # preferences → DB の notes カラムに保存
             created_at=now,
             updated_at=now,
         )

@@ -39,7 +39,7 @@ async def meal_id(client):
     ]
     mock_result = {
         "stock_summary": "", "start_date": "2026-06-05", "days": 1,
-        "meal_types": ["dinner"], "prompt_text": "", "raw_response": "",
+        "meal_types": ["dinner"], "preferences": "", "prompt_text": "", "raw_response": "",
         "meals": mock_meals, "error": None,
     }
     mock_graph = AsyncMock()

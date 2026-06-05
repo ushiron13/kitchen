@@ -22,6 +22,7 @@ _MOCK_SKELETON_RESULT = {
     "start_date": "2026-06-05",
     "days": 1,
     "meal_types": ["dinner"],
+    "preferences": "",
     "prompt_text": "",
     "raw_response": "",
     "meals": _MOCK_MEALS,

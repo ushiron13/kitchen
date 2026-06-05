@@ -77,6 +77,7 @@ async def create_meal_plan(
         "start_date": data.start_date,
         "days": data.days,
         "meal_types": list(data.meal_types),
+        "preferences": data.preferences or "",
         "prompt_text": "",
         "raw_response": "",
         "meals": [],

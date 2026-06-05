@@ -9,7 +9,7 @@ class MealPlanCreate(BaseModel):
     start_date: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$")
     days: int = Field(7, ge=1, le=14)
     meal_types: list[MealType] = ["dinner"]
-    notes: Optional[str] = Field(None, max_length=500)
+    preferences: Optional[str] = Field(None, max_length=500, description="LLMへの自然言語要望（例: 和食多め、30分以内）")
 
 
 class MealRead(BaseModel):

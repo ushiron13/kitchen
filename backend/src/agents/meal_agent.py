@@ -36,6 +36,7 @@ class SkeletonState(TypedDict):
     start_date: str
     days: int
     meal_types: list[str]
+    preferences: str  # ユーザーの自然言語要望（例: "和食多め、30分以内"）
     prompt_text: str
     raw_response: str
     meals: list[dict]
@@ -44,11 +45,13 @@ class SkeletonState(TypedDict):
 
 def _build_skeleton_prompt(state: SkeletonState) -> SkeletonState:
     types_str = "、".join(state["meal_types"])
+    pref_line = f"要望: {state['preferences']}\n" if state.get("preferences") else ""
     text = (
         f"在庫食材:\n{state['stock_summary']}\n\n"
         f"期間: {state['start_date']} から {state['days']} 日間\n"
-        f"食事区分: {types_str}\n\n"
-        "JSON配列のみ出力してください:\n"
+        f"食事区分: {types_str}\n"
+        f"{pref_line}"
+        "\nJSON配列のみ出力してください:\n"
         '[{"served_date":"YYYY-MM-DD","meal_type":"dinner","concept":"料理名",'
         '"estimated_ingredients":["食材1"],"cook_time_min_estimate":30}]'
     )
@@ -57,7 +60,7 @@ def _build_skeleton_prompt(state: SkeletonState) -> SkeletonState:
 
 def _call_skeleton_llm(state: SkeletonState) -> SkeletonState:
     llm = ChatAnthropic(
-        model=_HAIKU,
+        model=_SONNET,
         api_key=settings.anthropic_api_key,
         temperature=0.7,
         max_tokens=2048,
