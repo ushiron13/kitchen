@@ -11,4 +11,4 @@ services:
       - ${NAS_MOUNT_PATH:-./nas-mount}:/nas
     environment:
       LOG_LEVEL: DEBUG
-      ALLOWED_ORIGINS: "http://localhost:5173,https://kitchen.local"
+      ALLOWED_ORIGINS: '["http://localhost:5173","https://kitchen.local"]'

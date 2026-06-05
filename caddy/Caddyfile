@@ -5,7 +5,7 @@
 kitchen.local, kitchen.local:443 {
     tls /etc/caddy/certs/kitchen.local.pem /etc/caddy/certs/kitchen.local-key.pem
 
-    handle_path /api/* {
+    handle /api/* {
         reverse_proxy backend:8000 {
             transport http {
                 read_timeout 60s

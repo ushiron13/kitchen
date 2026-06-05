@@ -36,7 +36,7 @@ services:
       PROMPTS_DIR: /app/prompts
       LOG_LEVEL: INFO
       TZ: Asia/Tokyo
-      ALLOWED_ORIGINS: "https://kitchen.local"
+      ALLOWED_ORIGINS: '["https://kitchen.local"]'
     volumes:
       - ./data:/data
       - ${NAS_MOUNT_PATH:-./nas-mount}:/nas
