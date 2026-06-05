@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+.uv/
+uv.lock
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# Node
+node_modules/
+frontend/dist/
+frontend/.vite/
+.npm
+
+# Docker / Env
+.env
+.env.local
+*.db
+*.db-shm
+*.db-wal
+
+# Data / Secrets
+data/*.db
+data/*.db-shm
+data/*.db-wal
+caddy/certs/*.pem
+
+# WSL2 / Windows
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# VS Code
+.vscode/settings.json.local
+
+# IDE
+.idea/
+*.swp
+
+# Logs
+*.log
+logs/

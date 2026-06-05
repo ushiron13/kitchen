@@ -1,0 +1,15 @@
+**/.git
+**/.venv
+**/node_modules
+**/__pycache__
+**/*.pyc
+**/dist
+**/build
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/uv.lock
+**/*.db
+.env
+.env.*
+!.env.example

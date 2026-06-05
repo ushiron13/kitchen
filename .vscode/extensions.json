@@ -1,0 +1,16 @@
+{
+  "recommendations": [
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+    "charliermarsh.ruff",
+    "esbenp.prettier-vscode",
+    "dbaeumer.vscode-eslint",
+    "ms-azuretools.vscode-docker",
+    "redhat.vscode-yaml",
+    "tamasfe.even-better-toml",
+    "bradlc.vscode-tailwindcss",
+    "humao.rest-client",
+    "davidanson.vscode-markdownlint",
+    "bierner.markdown-mermaid"
+  ]
+}

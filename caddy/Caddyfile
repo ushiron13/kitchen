@@ -1,0 +1,35 @@
+{
+    auto_https off
+}
+
+kitchen.local, kitchen.local:443 {
+    tls /etc/caddy/certs/kitchen.local.pem /etc/caddy/certs/kitchen.local-key.pem
+
+    handle_path /api/* {
+        reverse_proxy backend:8000 {
+            transport http {
+                read_timeout 60s
+                write_timeout 60s
+                response_header_timeout 60s
+            }
+            header_up X-Real-IP {remote_host}
+        }
+    }
+
+    handle /health {
+        respond "OK" 200
+    }
+
+    handle {
+        root * /srv/kitchen
+        try_files {path} /index.html
+        file_server
+        @html path *.html
+        header @html Cache-Control "no-cache"
+    }
+
+    log {
+        output stdout
+        format json
+    }
+}

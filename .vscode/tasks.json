@@ -1,0 +1,37 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Backend: install (uv sync)",
+      "type": "shell",
+      "command": "uv sync",
+      "options": { "cwd": "${workspaceFolder}/backend" },
+      "group": "build"
+    },
+    {
+      "label": "Backend: migrate",
+      "type": "shell",
+      "command": "uv run alembic upgrade head",
+      "options": { "cwd": "${workspaceFolder}/backend" },
+      "group": "build"
+    },
+    {
+      "label": "Docker: up (dev)",
+      "type": "shell",
+      "command": "docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d",
+      "options": { "cwd": "${workspaceFolder}" }
+    },
+    {
+      "label": "Docker: down",
+      "type": "shell",
+      "command": "docker compose down",
+      "options": { "cwd": "${workspaceFolder}" }
+    },
+    {
+      "label": "Docker: logs",
+      "type": "shell",
+      "command": "docker compose logs -f",
+      "options": { "cwd": "${workspaceFolder}" }
+    }
+  ]
+}

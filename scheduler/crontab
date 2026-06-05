@@ -1,0 +1,2 @@
+0 2 * * * /scripts/backup_sqlite.sh >> /proc/1/fd/1 2>&1
+0 3 * * * /scripts/normalize_food.sh >> /proc/1/fd/1 2>&1
