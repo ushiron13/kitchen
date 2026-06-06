@@ -528,7 +528,12 @@ function MealCard({ meal, api, onDelete }: { meal: Meal; api: Api; onDelete: () 
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 12, color: '#888', marginBottom: 2 }}>{MEAL_TYPE_LABELS[meal.meal_type] ?? meal.meal_type}</div>
-            <div style={{ fontWeight: 600, fontSize: 14 }}>{meal.concept ?? '（未設定）'}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontWeight: 600, fontSize: 14 }}>{meal.concept ?? '（未設定）'}</span>
+              {meal.recipe_id && (
+                <span style={{ background: '#e8f5e9', color: '#2e7d32', borderRadius: 10, padding: '1px 7px', fontSize: 11 }}>レシピ済</span>
+              )}
+            </div>
             {meal.estimated_ingredients && meal.estimated_ingredients.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
                 {meal.estimated_ingredients.map((ing, i) => (
@@ -544,11 +549,11 @@ function MealCard({ meal, api, onDelete }: { meal: Meal; api: Api; onDelete: () 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end' }}>
             {meal.recipe_id ? (
               <button style={{ ...S.btn('#1565c0'), fontSize: 12, padding: '5px 10px' }} onClick={openRecipe} disabled={loading}>
-                {loading ? '読み込み中…' : 'レシピ詳細'}
+                {loading ? '読み込み中…' : 'レシピを見る'}
               </button>
             ) : (
               <button style={{ ...S.btn('#388e3c'), fontSize: 12, padding: '5px 10px' }} onClick={generate} disabled={loading}>
-                {loading ? '生成中…' : 'レシピ生成'}
+                {loading ? '生成中…' : 'レシピを生成する'}
               </button>
             )}
             <button style={{ ...S.btn('#e53935'), fontSize: 11, padding: '3px 8px' }} onClick={handleDelete} disabled={loading}>
