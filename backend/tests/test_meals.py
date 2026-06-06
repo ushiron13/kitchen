@@ -127,3 +127,16 @@ async def test_get_recipe(client, meal_id):
 async def test_get_recipe_not_found(client):
     r = await client.get("/api/v1/recipes/9999", headers={"X-API-Key": TEST_API_KEY})
     assert r.status_code == 404
+
+
+async def test_delete_meal(client, meal_id):
+    r = await client.delete(f"/api/v1/meals/{meal_id}", headers={"X-API-Key": TEST_API_KEY})
+    assert r.status_code == 204
+
+    r2 = await client.post(f"/api/v1/meals/{meal_id}/recipe", headers={"X-API-Key": TEST_API_KEY})
+    assert r2.status_code == 404
+
+
+async def test_delete_meal_not_found(client):
+    r = await client.delete("/api/v1/meals/9999", headers={"X-API-Key": TEST_API_KEY})
+    assert r.status_code == 404

@@ -89,6 +89,22 @@ class MealPlanRepository:
         await self.session.flush()
         return meal
 
+    async def delete(self, plan_id: int) -> bool:
+        plan = await self.session.get(MealPlan, plan_id)
+        if plan is None:
+            return False
+        await self.session.delete(plan)
+        await self.session.flush()
+        return True
+
+    async def delete_meal(self, meal_id: int) -> bool:
+        meal = await self.session.get(Meal, meal_id)
+        if meal is None:
+            return False
+        await self.session.delete(meal)
+        await self.session.flush()
+        return True
+
     async def get_ingredient_names(self, plan_id: int) -> list[str]:
         plan = await self.get(plan_id)
         if plan is None:

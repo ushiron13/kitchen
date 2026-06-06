@@ -117,6 +117,27 @@ async def test_get_meal_plan_not_found(client):
     assert r.status_code == 404
 
 
+async def test_delete_meal_plan(client):
+    with patch("src.api.v1.meal_plans.build_skeleton_graph", return_value=_mock_skeleton()):
+        create_r = await client.post(
+            "/api/v1/meal-plans",
+            json={"start_date": "2026-06-05", "days": 1, "meal_types": ["dinner"]},
+            headers={"X-API-Key": TEST_API_KEY},
+        )
+    plan_id = create_r.json()["id"]
+
+    r = await client.delete(f"/api/v1/meal-plans/{plan_id}", headers={"X-API-Key": TEST_API_KEY})
+    assert r.status_code == 204
+
+    r2 = await client.get(f"/api/v1/meal-plans/{plan_id}", headers={"X-API-Key": TEST_API_KEY})
+    assert r2.status_code == 404
+
+
+async def test_delete_meal_plan_not_found(client):
+    r = await client.delete("/api/v1/meal-plans/9999", headers={"X-API-Key": TEST_API_KEY})
+    assert r.status_code == 404
+
+
 async def test_create_meal_plan_agent_error(client):
     mock_graph = AsyncMock()
     mock_graph.ainvoke.return_value = {**_MOCK_SKELETON_RESULT, "meals": [], "error": "LLM failed"}

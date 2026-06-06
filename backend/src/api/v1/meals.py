@@ -43,6 +43,18 @@ def _recipe_to_read(recipe) -> RecipeRead:
     )
 
 
+@router.delete("/{meal_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_meal(
+    meal_id: int,
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    repo = MealPlanRepository(session)
+    deleted = await repo.delete_meal(meal_id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Meal not found")
+    await session.commit()
+
+
 @router.post("/{meal_id}/recipe", response_model=RecipeRead, status_code=status.HTTP_201_CREATED)
 async def generate_recipe_for_meal(
     meal_id: int,

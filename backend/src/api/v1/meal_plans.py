@@ -118,6 +118,18 @@ async def get_meal_plan(
     return _plan_to_read(plan)
 
 
+@router.delete("/{plan_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_meal_plan(
+    plan_id: int,
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    repo = MealPlanRepository(session)
+    deleted = await repo.delete(plan_id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Meal plan not found")
+    await session.commit()
+
+
 @router.get("/{plan_id}/shopping-list", response_model=ShoppingListRead)
 async def get_shopping_list(
     plan_id: int,
