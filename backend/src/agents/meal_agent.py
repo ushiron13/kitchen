@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from typing import Optional
 
 from langchain_anthropic import ChatAnthropic
@@ -24,6 +25,23 @@ def _strip_fences(text: str) -> str:
             lines = text.split("\n")
             end = len(lines) - 1 if lines[-1].strip() == "```" else len(lines)
             return "\n".join(lines[1:end])
+    return text
+
+
+def _extract_json_array(raw: str) -> str:
+    """フェンス除去後、JSON配列境界をregexで特定してパース前の文字列を返す。
+    LLMが前後に余分なテキストを付けた場合や出力が途中で切れた場合のフォールバック。"""
+    text = _strip_fences(raw)
+    # まず直接パースを試みて成功すればそのまま返す
+    try:
+        json.loads(text)
+        return text
+    except Exception:
+        pass
+    # [ から始まる最長の配列ブロックを探す
+    m = re.search(r'(\[.*\])', text, re.DOTALL)
+    if m:
+        return m.group(1)
     return text
 
 
@@ -63,7 +81,7 @@ def _call_skeleton_llm(state: SkeletonState) -> SkeletonState:
         model=_SONNET,
         api_key=settings.anthropic_api_key,
         temperature=0.7,
-        max_tokens=2048,
+        max_tokens=4096,  # 多めの食事区分・日数でも切れないように拡張
     )
     messages = [
         SystemMessage(content=(
@@ -77,7 +95,7 @@ def _call_skeleton_llm(state: SkeletonState) -> SkeletonState:
 
 
 def _parse_skeleton(state: SkeletonState) -> SkeletonState:
-    text = _strip_fences(state["raw_response"])
+    text = _extract_json_array(state["raw_response"])
     try:
         meals = json.loads(text)
         if not isinstance(meals, list):
