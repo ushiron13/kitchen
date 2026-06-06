@@ -34,7 +34,9 @@ frontend/.vite/
 data/*.db
 data/*.db-shm
 data/*.db-wal
+data/rootCA.pem
 caddy/certs/*.pem
+nas-mount/
 
 # WSL2 / Windows
 Thumbs.db

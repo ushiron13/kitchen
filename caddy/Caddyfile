@@ -1,8 +1,16 @@
 {
     auto_https off
+    default_sni kitchen.local
 }
 
-kitchen.local, kitchen.local:443 {
+:80 {
+    handle /rootCA.pem {
+        root * /etc/caddy/certs
+        file_server
+    }
+}
+
+kitchen.local, kitchen.local:443, 192.168.68.56, 192.168.68.56:443, localhost, localhost:443, 127.0.0.1, 127.0.0.1:443 {
     tls /etc/caddy/certs/kitchen.local.pem /etc/caddy/certs/kitchen.local-key.pem
 
     handle /api/* {
