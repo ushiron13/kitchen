@@ -480,23 +480,30 @@ function CreatePlanForm({ api, onCreated }: { api: Api; onCreated: (p: MealPlan)
 }
 
 function MealCard({ meal, api }: { meal: Meal; api: Api }) {
-  const [recipe, setRecipe] = useState<Recipe | null>(null)
+  const [loadedRecipe, setLoadedRecipe] = useState<Recipe | null>(null)
+  const [showModal, setShowModal] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  async function loadRecipe() {
-    if (meal.recipe_id && !recipe) {
-      try { setRecipe(await api.getRecipe(meal.recipe_id)) } catch { /* ignore */ }
-    }
+  // B-01: meal.recipe_id が真のステート。ローカルの recipe 状態に依存しない
+  async function openRecipe() {
+    if (loadedRecipe) { setShowModal(true); return }
+    setLoading(true)
+    try {
+      const r = await api.getRecipe(meal.recipe_id!)
+      setLoadedRecipe(r)
+      setShowModal(true)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '読み込み失敗')
+    } finally { setLoading(false) }
   }
-
-  useEffect(() => { loadRecipe() }, [meal.recipe_id])
 
   async function generate() {
     setLoading(true); setError('')
     try {
       const r = await api.generateRecipe(meal.id)
-      setRecipe(r)
+      setLoadedRecipe(r)
+      setShowModal(true)
     } catch (err: unknown) { setError(err instanceof Error ? err.message : '生成失敗') }
     finally { setLoading(false) }
   }
@@ -521,9 +528,9 @@ function MealCard({ meal, api }: { meal: Meal; api: Api }) {
             {error && <div style={{ color: 'red', fontSize: 11, marginTop: 4 }}>{error}</div>}
           </div>
           <div>
-            {recipe ? (
-              <button style={{ ...S.btn('#1565c0'), fontSize: 12, padding: '5px 10px' }} onClick={() => setRecipe(recipe)}>
-                レシピ詳細
+            {meal.recipe_id ? (
+              <button style={{ ...S.btn('#1565c0'), fontSize: 12, padding: '5px 10px' }} onClick={openRecipe} disabled={loading}>
+                {loading ? '読み込み中…' : 'レシピ詳細'}
               </button>
             ) : (
               <button style={{ ...S.btn('#388e3c'), fontSize: 12, padding: '5px 10px' }} onClick={generate} disabled={loading}>
@@ -533,7 +540,7 @@ function MealCard({ meal, api }: { meal: Meal; api: Api }) {
           </div>
         </div>
       </div>
-      {recipe && <RecipeModal recipe={recipe} onClose={() => setRecipe(null)} />}
+      {showModal && loadedRecipe && <RecipeModal recipe={loadedRecipe} onClose={() => setShowModal(false)} />}
     </>
   )
 }

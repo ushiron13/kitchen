@@ -67,9 +67,12 @@ async def generate_recipe_for_meal(
     # F-RECIPE-02: 同名レシピが既にあれば再利用してLLMコストを節約
     existing = await recipe_repo.find_by_name(concept)
     if existing:
-        await recipe_repo.increment_reuse(existing.id)
-        await meal_repo.attach_recipe(meal_id, existing.id)
-        await session.commit()
+        # 別の meal への初回アタッチ時のみ reuse_count を増やす
+        # すでにこの meal に紐づいている場合（再表示など）はカウントしない
+        if meal.recipe_id != existing.id:
+            await recipe_repo.increment_reuse(existing.id)
+            await meal_repo.attach_recipe(meal_id, existing.id)
+            await session.commit()
         recipe = await recipe_repo.get(existing.id)
         return _recipe_to_read(recipe)
 
