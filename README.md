@@ -126,24 +126,27 @@ make lint
 
 ---
 
-## API エンドポイント（Phase 0c 時点）
+## API エンドポイント（Phase 1 時点）
 
-| メソッド | パス | 説明 |
-|---------|------|------|
-| GET | `/api/v1/health/live` | 生存確認 |
-| GET | `/api/v1/health/ready` | DB 疎通確認 |
-| POST | `/api/v1/foods` | 食品マスタ登録 |
-| GET | `/api/v1/foods` | 食品マスタ一覧 |
-| POST | `/api/v1/stock` | 在庫追加 |
-| GET | `/api/v1/stock` | 在庫一覧 |
-| PATCH | `/api/v1/stock/{id}` | 在庫更新 |
-| POST | `/api/v1/stock/{id}/transactions` | 消費・廃棄など記録 |
-| DELETE | `/api/v1/stock/{id}` | 在庫削除 |
-| **POST** | **`/api/v1/meal-plans`** | **在庫から献立スケルトン生成（LLM）** |
-| **GET** | **`/api/v1/meal-plans`** | **献立プラン一覧** |
-| **GET** | **`/api/v1/meal-plans/{id}`** | **献立プラン取得** |
-| **POST** | **`/api/v1/meals/{id}/recipe`** | **レシピ詳細生成（LLM）** |
-| **GET** | **`/api/v1/recipes/{id}`** | **レシピ取得** |
+| メソッド | パス | 説明 | 状態 |
+|---------|------|------|------|
+| GET | `/api/v1/health/live` | 生存確認 | ✅ |
+| GET | `/api/v1/health/ready` | DB 疎通確認 | ✅ |
+| POST | `/api/v1/foods` | 食品マスタ登録 | ✅ |
+| GET | `/api/v1/foods` | 食品マスタ一覧 | ✅ |
+| POST | `/api/v1/stock` | 在庫追加 | ✅ |
+| GET | `/api/v1/stock` | 在庫一覧 | ✅ |
+| PATCH | `/api/v1/stock/{id}` | 在庫更新 | ✅ |
+| POST | `/api/v1/stock/{id}/transactions` | 消費・廃棄など記録 | ✅ |
+| DELETE | `/api/v1/stock/{id}` | 在庫削除 | ✅ |
+| POST | `/api/v1/meal-plans` | 在庫から献立スケルトン生成（LLM） | ✅ |
+| GET | `/api/v1/meal-plans` | 献立プラン一覧 | ✅ |
+| GET | `/api/v1/meal-plans/{id}` | 献立プラン取得（meals 含む） | ✅ |
+| GET | `/api/v1/meal-plans/{id}/shopping-list` | 買い物リスト生成 | ✅ |
+| POST | `/api/v1/meals/{id}/recipe` | レシピ詳細生成（LLM）または再利用 | ✅ |
+| GET | `/api/v1/recipes/{id}` | レシピ取得 | ✅ |
+| DELETE | `/api/v1/meal-plans/{id}` | 献立プラン削除（全 meal 含む） | 🔲 F-06 |
+| DELETE | `/api/v1/meals/{id}` | 個別献立削除 | 🔲 F-06 |
 
 > すべてのエンドポイントは `X-API-Key` ヘッダー認証が必要（`/health` 除く）。
 
@@ -167,8 +170,17 @@ curl -s -X POST https://kitchen.local/api/v1/meals/1/recipe \
 
 - **Phase 0a** ✅ プロジェクトスキャフォールド、health エンドポイント
 - **Phase 0b** ✅ 在庫 CRUD 最小実装
-- **Phase 0c** ✅ スケルトン献立提案 + レシピ詳細生成
-- **Phase 1** 🔲 PWA MVP（家族日常利用可能）
+- **Phase 0c** ✅ スケルトン献立提案 + レシピ詳細生成 + PWA UI
+- **Phase 1** 🔄 Phase 2 機能実装中（hotfix B-01〜B-03 完了）
+  - ✅ B-01: reuse_count 二重カウント修正
+  - ✅ B-02: レシピモーダル自動表示修正
+  - ✅ B-03: 要望テキスト時の JSON 解析エラー修正
+  - 🔲 F-06: 献立プラン・個別献立の削除
+  - 🔲 F-01: 食材マスター・在庫の編集・削除 UI
+  - 🔲 F-05: ユーザープロファイル（固定嗜好・家族構成）
+  - 🔲 F-02: 食材カテゴリ絞り込み・並び替え
+  - 🔲 F-04: レシピ「生成」と「参照」ボタンの明確分離
+  - 🔲 F-03: 食材の保存日数目安表示
 - **Phase 2** 🔲 離乳食対応、画像認識、LLM 最適化
 
 ---
