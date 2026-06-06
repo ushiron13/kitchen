@@ -6,6 +6,26 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .base import Base
 
 
+class MealFeedback(Base):
+    """好み学習用フィードバック（Phase 2+）。meal.status の cooked/skipped に加え、
+    詳細な評価・スキップ理由を記録する。集計クエリで嗜好シグナルを抽出できる。"""
+
+    __tablename__ = "meal_feedback"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    meal_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("meal.id", ondelete="CASCADE"), nullable=False
+    )
+    satisfaction: Mapped[Optional[int]] = mapped_column(Integer)  # 1–5
+    skip_reason: Mapped[Optional[str]] = mapped_column(Text)
+    notes: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[str] = mapped_column(Text, nullable=False)
+
+    meal: Mapped["Meal"] = relationship("Meal", back_populates="feedbacks")
+
+    __table_args__ = (Index("idx_meal_feedback_meal_id", "meal_id"),)
+
+
 class MealPlan(Base):
     __tablename__ = "meal_plan"
 
@@ -50,6 +70,9 @@ class Meal(Base):
 
     meal_plan: Mapped[Optional["MealPlan"]] = relationship("MealPlan", back_populates="meals")
     recipe: Mapped[Optional["Recipe"]] = relationship("Recipe")  # type: ignore[name-defined]
+    feedbacks: Mapped[list["MealFeedback"]] = relationship(
+        "MealFeedback", back_populates="meal", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         CheckConstraint(

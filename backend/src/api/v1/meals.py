@@ -8,6 +8,7 @@ from src.core.database import get_session
 from src.core.security import verify_api_key
 from src.repositories.meal_plan import MealPlanRepository
 from src.repositories.recipe import RecipeRepository
+from src.schemas.meal_plan import MealRead, MealStatusUpdate
 from src.schemas.recipe import RecipeIngredientRead, RecipeRead
 
 router = APIRouter(
@@ -41,6 +42,19 @@ def _recipe_to_read(recipe) -> RecipeRead:
         created_at=recipe.created_at,
         updated_at=recipe.updated_at,
     )
+
+
+@router.patch("/{meal_id}/status", status_code=status.HTTP_204_NO_CONTENT)
+async def update_meal_status(
+    meal_id: int,
+    data: MealStatusUpdate,
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    repo = MealPlanRepository(session)
+    meal = await repo.update_meal_status(meal_id, data.status)
+    if meal is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Meal not found")
+    await session.commit()
 
 
 @router.delete("/{meal_id}", status_code=status.HTTP_204_NO_CONTENT)
