@@ -114,9 +114,20 @@ function makeApi(apiKey: string) {
     getFoods: () => req<Food[]>('/api/v1/foods'),
     createFood: (p: { name: string; category: string; default_shelf_days?: number }) =>
       req<Food>('/api/v1/foods', { method: 'POST', body: JSON.stringify(p) }),
+    updateFood: (id: number, p: { name?: string; category?: string; default_shelf_days?: number | null }) =>
+      req<Food>(`/api/v1/foods/${id}`, { method: 'PATCH', body: JSON.stringify(p) }),
+    deleteFood: (id: number) =>
+      fetch(`/api/v1/foods/${id}`, { method: 'DELETE', headers }).then(async r => {
+        if (!r.ok) {
+          try { const b = await r.json(); throw new Error(b.detail ?? '削除失敗') }
+          catch (e) { if (e instanceof Error) throw e; throw new Error('削除失敗') }
+        }
+      }),
     getStock: () => req<StockItem[]>('/api/v1/stock'),
     createStock: (p: { food_id: number; quantity: number; unit: string; expiry_date?: string }) =>
       req<StockItem>('/api/v1/stock', { method: 'POST', body: JSON.stringify(p) }),
+    updateStock: (id: number, p: { quantity?: number; unit?: string; expiry_date?: string | null }) =>
+      req<StockItem>(`/api/v1/stock/${id}`, { method: 'PATCH', body: JSON.stringify(p) }),
     consumeStock: (itemId: number, delta: number) =>
       req<StockItem>(`/api/v1/stock/${itemId}/transactions`, {
         method: 'POST',
@@ -175,6 +186,92 @@ const S = {
 }
 
 // ---- Stock Components ----
+function EditFoodModal({ api, food, onClose, onUpdated }: { api: Api; food: Food; onClose: () => void; onUpdated: (f: Food) => void }) {
+  const [name, setName] = useState(food.name)
+  const [category, setCategory] = useState(food.category)
+  const [shelfDays, setShelfDays] = useState(food.default_shelf_days?.toString() ?? '')
+  const [error, setError] = useState('')
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    try {
+      const updated = await api.updateFood(food.id, {
+        name,
+        category,
+        default_shelf_days: shelfDays ? Number(shelfDays) : null,
+      })
+      onUpdated(updated)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '更新失敗')
+    }
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+      <div style={{ background: '#fff', borderRadius: 8, padding: 24, width: 320 }}>
+        <h3 style={{ margin: '0 0 16px' }}>食材マスター編集</h3>
+        <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div><div style={S.label}>食材名</div><input style={S.input} value={name} onChange={e => setName(e.target.value)} required /></div>
+          <div>
+            <div style={S.label}>カテゴリ</div>
+            <select style={S.input} value={category} onChange={e => setCategory(e.target.value)}>
+              {Object.entries(CATEGORY_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          </div>
+          <div><div style={S.label}>デフォルト保存日数（任意）</div><input style={S.input} type="number" min={1} value={shelfDays} onChange={e => setShelfDays(e.target.value)} /></div>
+          {error && <div style={{ color: 'red', fontSize: 12 }}>{error}</div>}
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button type="button" onClick={onClose} style={S.btn('#888')}>キャンセル</button>
+            <button type="submit" style={S.btn()}>保存</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function EditStockModal({ api, item, onClose, onUpdated }: { api: Api; item: StockItem; onClose: () => void; onUpdated: () => void }) {
+  const [quantity, setQuantity] = useState(item.quantity.toString())
+  const [unit, setUnit] = useState(item.unit)
+  const [expiry, setExpiry] = useState(item.expiry_date ?? '')
+  const [error, setError] = useState('')
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    try {
+      await api.updateStock(item.id, {
+        quantity: Number(quantity),
+        unit,
+        expiry_date: expiry || null,
+      })
+      onUpdated()
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '更新失敗')
+    }
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+      <div style={{ background: '#fff', borderRadius: 8, padding: 24, width: 320 }}>
+        <h3 style={{ margin: '0 0 4px' }}>在庫編集</h3>
+        <div style={{ fontSize: 13, color: '#555', marginBottom: 16 }}>{item.food_name}</div>
+        <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ flex: 2 }}><div style={S.label}>数量</div><input style={S.input} type="number" min={0} step={0.01} value={quantity} onChange={e => setQuantity(e.target.value)} required /></div>
+            <div style={{ flex: 1 }}><div style={S.label}>単位</div><input style={S.input} value={unit} onChange={e => setUnit(e.target.value)} required /></div>
+          </div>
+          <div><div style={S.label}>消費期限（任意）</div><input style={S.input} type="date" value={expiry} onChange={e => setExpiry(e.target.value)} /></div>
+          {error && <div style={{ color: 'red', fontSize: 12 }}>{error}</div>}
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button type="button" onClick={onClose} style={S.btn('#888')}>キャンセル</button>
+            <button type="submit" style={S.btn()}>保存</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 function AddFoodModal({ api, onClose, onCreated }: { api: Api; onClose: () => void; onCreated: (f: Food) => void }) {
   const [name, setName] = useState('')
   const [category, setCategory] = useState('refrigerated')
@@ -263,6 +360,10 @@ function StockPage({ api }: { api: Api }) {
   const [stock, setStock] = useState<StockItem[]>([])
   const [foods, setFoods] = useState<Food[]>([])
   const [modal, setModal] = useState<'food' | 'stock' | null>(null)
+  const [editFood, setEditFood] = useState<Food | null>(null)
+  const [editStock, setEditStock] = useState<StockItem | null>(null)
+  const [showFoods, setShowFoods] = useState(false)
+  const [foodError, setFoodError] = useState<Record<number, string>>({})
   const [error, setError] = useState('')
 
   const reload = useCallback(async () => {
@@ -283,9 +384,20 @@ function StockPage({ api }: { api: Api }) {
     catch (e: unknown) { alert(e instanceof Error ? e.message : 'エラー') }
   }
 
-  async function remove(item: StockItem) {
+  async function removeStock(item: StockItem) {
     if (!confirm(`「${item.food_name}」を在庫から削除しますか？`)) return
     await api.deleteStock(item.id); reload()
+  }
+
+  async function removeFood(food: Food) {
+    if (!confirm(`「${food.name}」を食材マスターから削除しますか？`)) return
+    try {
+      await api.deleteFood(food.id)
+      setFoods(prev => prev.filter(f => f.id !== food.id))
+      setFoodError(prev => { const n = { ...prev }; delete n[food.id]; return n })
+    } catch (e: unknown) {
+      setFoodError(prev => ({ ...prev, [food.id]: e instanceof Error ? e.message : '削除失敗' }))
+    }
   }
 
   const today = new Date().toISOString().slice(0, 10)
@@ -298,9 +410,37 @@ function StockPage({ api }: { api: Api }) {
         <h2 style={{ margin: 0, fontSize: 20 }}>在庫管理</h2>
         <div style={{ display: 'flex', gap: 8 }}>
           <button style={S.btn('#555')} onClick={() => setModal('food')}>+ 食材登録</button>
+          <button style={S.btn('#78909c')} onClick={() => setShowFoods(v => !v)}>食材一覧{showFoods ? ' ▲' : ' ▼'}</button>
           <button style={S.btn()} onClick={() => setModal('stock')} disabled={foods.length === 0}>+ 在庫追加</button>
         </div>
       </div>
+
+      {showFoods && (
+        <div style={{ border: '1px solid #e0e0e0', borderRadius: 8, padding: '8px 12px', marginBottom: 16, background: '#fafafa' }}>
+          <div style={{ fontWeight: 600, fontSize: 13, color: '#555', marginBottom: 8 }}>食材マスター（{foods.length}件）</div>
+          {foods.length === 0 ? (
+            <div style={{ color: '#aaa', fontSize: 13 }}>食材が登録されていません</div>
+          ) : (
+            foods.map(food => (
+              <div key={food.id}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid #f0f0f0' }}>
+                  <div>
+                    <span style={{ fontSize: 13 }}>{food.name}</span>
+                    <span style={S.badge(food.category)}>{CATEGORY_LABELS[food.category] ?? food.category}</span>
+                    {food.default_shelf_days && <span style={{ fontSize: 11, color: '#888', marginLeft: 8 }}>{food.default_shelf_days}日</span>}
+                  </div>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <button style={{ ...S.btn('#1976d2'), fontSize: 11, padding: '3px 8px' }} onClick={() => setEditFood(food)}>編集</button>
+                    <button style={{ ...S.btn('#e53935'), fontSize: 11, padding: '3px 8px' }} onClick={() => removeFood(food)}>削除</button>
+                  </div>
+                </div>
+                {foodError[food.id] && <div style={{ color: '#e53935', fontSize: 11, padding: '2px 0 4px' }}>{foodError[food.id]}</div>}
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
       {error && <div style={{ color: 'red', marginBottom: 8 }}>{error}</div>}
       {expiringSoon.length > 0 && (
         <div style={{ background: '#fff3e0', border: '1px solid #ffcc80', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 13 }}>
@@ -320,7 +460,8 @@ function StockPage({ api }: { api: Api }) {
               </div>
               <div style={{ display: 'flex', gap: 6 }}>
                 <button style={S.btn('#43a047')} onClick={() => consume(item)}>消費</button>
-                <button style={S.btn('#e53935')} onClick={() => remove(item)}>削除</button>
+                <button style={S.btn('#1565c0')} onClick={() => setEditStock(item)}>編集</button>
+                <button style={S.btn('#e53935')} onClick={() => removeStock(item)}>削除</button>
               </div>
             </div>
             <div style={{ marginTop: 4, fontSize: 13, color: '#555' }}>
@@ -335,8 +476,24 @@ function StockPage({ api }: { api: Api }) {
           </div>
         ))
       )}
-      {modal === 'food' && <AddFoodModal api={api} onClose={() => setModal(null)} onCreated={() => { reload(); setModal(null) }} />}
+      {modal === 'food' && <AddFoodModal api={api} onClose={() => setModal(null)} onCreated={f => { setFoods(prev => [...prev, f]); setModal(null) }} />}
       {modal === 'stock' && <AddStockModal api={api} foods={foods} onClose={() => setModal(null)} onCreated={() => { reload(); setModal(null) }} />}
+      {editFood && (
+        <EditFoodModal
+          api={api}
+          food={editFood}
+          onClose={() => setEditFood(null)}
+          onUpdated={f => { setFoods(prev => prev.map(x => x.id === f.id ? f : x)); setEditFood(null) }}
+        />
+      )}
+      {editStock && (
+        <EditStockModal
+          api={api}
+          item={editStock}
+          onClose={() => setEditStock(null)}
+          onUpdated={() => { reload(); setEditStock(null) }}
+        />
+      )}
     </div>
   )
 }

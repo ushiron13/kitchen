@@ -1,11 +1,13 @@
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.database import get_session
 from src.core.security import verify_api_key
+from src.models.stock import StockItem
 from src.repositories.food import FoodRepository
 from src.schemas.food import FoodCreate, FoodRead, FoodUpdate
 
@@ -73,7 +75,14 @@ async def delete_food(
     session: AsyncSession = Depends(get_session),
 ) -> None:
     repo = FoodRepository(session)
-    deleted = await repo.delete(food_id)
-    if not deleted:
+    food = await repo.get(food_id)
+    if food is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Food not found")
+    ref = await session.execute(select(StockItem.id).where(StockItem.food_id == food_id).limit(1))
+    if ref.scalar_one_or_none() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="在庫がある食材は削除できません。先に在庫を削除してください。",
+        )
+    await repo.delete(food_id)
     await session.commit()
