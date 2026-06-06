@@ -364,6 +364,8 @@ function StockPage({ api }: { api: Api }) {
   const [editStock, setEditStock] = useState<StockItem | null>(null)
   const [showFoods, setShowFoods] = useState(false)
   const [foodError, setFoodError] = useState<Record<number, string>>({})
+  const [filterCat, setFilterCat] = useState<string | null>(null)
+  const [sortBy, setSortBy] = useState<'expiry' | 'name'>('expiry')
   const [error, setError] = useState('')
 
   const reload = useCallback(async () => {
@@ -447,10 +449,46 @@ function StockPage({ api }: { api: Api }) {
           ⚠ 期限切れ間近: {expiringSoon.map(s => s.food_name).join('、')}
         </div>
       )}
-      {stock.length === 0 ? (
-        <div style={{ textAlign: 'center', color: '#aaa', padding: 40 }}>在庫がありません</div>
-      ) : (
-        stock.map(item => (
+      {stock.length > 0 && (() => {
+        const usedCats = [...new Set(stock.map(s => s.food_category))]
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+            <button
+              onClick={() => setFilterCat(null)}
+              style={{ padding: '4px 10px', borderRadius: 12, fontSize: 12, border: 'none', cursor: 'pointer', background: filterCat === null ? '#1976d2' : '#f0f0f0', color: filterCat === null ? '#fff' : '#555' }}
+            >すべて</button>
+            {Object.entries(CATEGORY_LABELS)
+              .filter(([v]) => usedCats.includes(v))
+              .map(([v, l]) => (
+                <button key={v}
+                  onClick={() => setFilterCat(v === filterCat ? null : v)}
+                  style={{ padding: '4px 10px', borderRadius: 12, fontSize: 12, border: 'none', cursor: 'pointer', background: filterCat === v ? '#1976d2' : '#f0f0f0', color: filterCat === v ? '#fff' : '#555' }}
+                >{l}</button>
+              ))
+            }
+            <button
+              onClick={() => setSortBy(s => s === 'expiry' ? 'name' : 'expiry')}
+              style={{ marginLeft: 'auto', padding: '4px 10px', borderRadius: 12, fontSize: 12, border: '1px solid #ccc', cursor: 'pointer', background: '#fff', color: '#555' }}
+            >{sortBy === 'expiry' ? '期限順' : '名前順'}</button>
+          </div>
+        )
+      })()}
+
+      {(() => {
+        const filtered = stock
+          .filter(s => !filterCat || s.food_category === filterCat)
+          .sort((a, b) => {
+            if (sortBy === 'name') return a.food_name.localeCompare(b.food_name, 'ja')
+            if (!a.expiry_date && !b.expiry_date) return 0
+            if (!a.expiry_date) return 1
+            if (!b.expiry_date) return -1
+            return a.expiry_date.localeCompare(b.expiry_date)
+          })
+        return filtered.length === 0 ? (
+          <div style={{ textAlign: 'center', color: '#aaa', padding: 40 }}>
+            {filterCat ? `「${CATEGORY_LABELS[filterCat]}」の在庫がありません` : '在庫がありません'}
+          </div>
+        ) : filtered.map(item => (
           <div key={item.id} style={{ ...S.card, opacity: item.expiry_date && item.expiry_date < today ? 0.6 : 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
@@ -475,7 +513,7 @@ function StockPage({ api }: { api: Api }) {
             </div>
           </div>
         ))
-      )}
+      })()}
       {modal === 'food' && <AddFoodModal api={api} onClose={() => setModal(null)} onCreated={f => { setFoods(prev => [...prev, f]); setModal(null) }} />}
       {modal === 'stock' && <AddStockModal api={api} foods={foods} onClose={() => setModal(null)} onCreated={() => { reload(); setModal(null) }} />}
       {editFood && (
