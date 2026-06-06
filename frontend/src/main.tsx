@@ -145,6 +145,9 @@ function makeApi(apiKey: string) {
       fetch(`/api/v1/meal-plans/${planId}`, { method: 'DELETE', headers }).then(r => { if (!r.ok) throw new Error() }),
     deleteMeal: (mealId: number) =>
       fetch(`/api/v1/meals/${mealId}`, { method: 'DELETE', headers }).then(r => { if (!r.ok) throw new Error() }),
+    updateMealStatus: (mealId: number, s: 'planned' | 'cooked' | 'skipped') =>
+      fetch(`/api/v1/meals/${mealId}/status`, { method: 'PATCH', headers, body: JSON.stringify({ status: s }) })
+        .then(r => { if (!r.ok) throw new Error() }),
     getShoppingList: (planId: number) => req<ShoppingList>(`/api/v1/meal-plans/${planId}/shopping-list`),
 
     // Recipes
@@ -678,11 +681,24 @@ function CreatePlanForm({ api, onCreated }: { api: Api; onCreated: (p: MealPlan)
   )
 }
 
+const STATUS_COLORS: Record<string, string> = { planned: '#e0e0e0', cooked: '#4caf50', skipped: '#9e9e9e' }
+
 function MealCard({ meal, api, onDelete }: { meal: Meal; api: Api; onDelete: () => void }) {
   const [loadedRecipe, setLoadedRecipe] = useState<Recipe | null>(null)
   const [showModal, setShowModal] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [currentStatus, setCurrentStatus] = useState(meal.status)
+
+  async function toggleStatus(next: 'cooked' | 'skipped') {
+    const newStatus = currentStatus === next ? 'planned' : next
+    try {
+      await api.updateMealStatus(meal.id, newStatus)
+      setCurrentStatus(newStatus)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '更新失敗')
+    }
+  }
 
   async function handleDelete() {
     if (!confirm(`「${meal.concept ?? '未設定'}」を削除しますか？`)) return
@@ -719,7 +735,12 @@ function MealCard({ meal, api, onDelete }: { meal: Meal; api: Api; onDelete: () 
 
   return (
     <>
-      <div style={{ background: '#fafafa', border: '1px solid #e8e8e8', borderRadius: 6, padding: '8px 12px', marginBottom: 6 }}>
+      <div style={{
+        background: '#fafafa',
+        border: `1px solid ${currentStatus === 'cooked' ? '#a5d6a7' : currentStatus === 'skipped' ? '#e0e0e0' : '#e8e8e8'}`,
+        borderRadius: 6, padding: '8px 12px', marginBottom: 6,
+        opacity: currentStatus === 'skipped' ? 0.7 : 1,
+      }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 12, color: '#888', marginBottom: 2 }}>{MEAL_TYPE_LABELS[meal.meal_type] ?? meal.meal_type}</div>
@@ -740,6 +761,17 @@ function MealCard({ meal, api, onDelete }: { meal: Meal; api: Api; onDelete: () 
               <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>⏱ 約{meal.cook_time_min_estimate}分</div>
             )}
             {error && <div style={{ color: 'red', fontSize: 11, marginTop: 4 }}>{error}</div>}
+            <div style={{ display: 'flex', gap: 5, marginTop: 7, alignItems: 'center' }}>
+              <span style={{ fontSize: 10, color: '#aaa' }}>実施:</span>
+              <button
+                style={{ padding: '2px 8px', borderRadius: 10, fontSize: 11, border: 'none', cursor: 'pointer', background: currentStatus === 'cooked' ? STATUS_COLORS.cooked : '#f0f0f0', color: currentStatus === 'cooked' ? '#fff' : '#666' }}
+                onClick={() => toggleStatus('cooked')} disabled={loading}
+              >{currentStatus === 'cooked' ? '✓ 作った' : '作った'}</button>
+              <button
+                style={{ padding: '2px 8px', borderRadius: 10, fontSize: 11, border: 'none', cursor: 'pointer', background: currentStatus === 'skipped' ? STATUS_COLORS.skipped : '#f0f0f0', color: currentStatus === 'skipped' ? '#fff' : '#666' }}
+                onClick={() => toggleStatus('skipped')} disabled={loading}
+              >{currentStatus === 'skipped' ? '✓ スキップ' : 'スキップ'}</button>
+            </div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end' }}>
             {meal.recipe_id ? (

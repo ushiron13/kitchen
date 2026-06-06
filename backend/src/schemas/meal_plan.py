@@ -2,6 +2,8 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
+MealStatus = Literal["planned", "cooked", "skipped"]
+
 MealType = Literal["breakfast", "lunch", "dinner", "snack"]
 
 
@@ -27,6 +29,10 @@ class MealRead(BaseModel):
     updated_at: str
 
     model_config = {"from_attributes": True}
+
+
+class MealStatusUpdate(BaseModel):
+    status: MealStatus
 
 
 class MealPlanRead(BaseModel):

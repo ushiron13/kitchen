@@ -89,6 +89,15 @@ class MealPlanRepository:
         await self.session.flush()
         return meal
 
+    async def update_meal_status(self, meal_id: int, new_status: str) -> Optional[Meal]:
+        meal = await self.session.get(Meal, meal_id)
+        if meal is None:
+            return None
+        meal.status = new_status
+        meal.updated_at = _now()
+        await self.session.flush()
+        return meal
+
     async def delete(self, plan_id: int) -> bool:
         plan = await self.session.get(MealPlan, plan_id)
         if plan is None:
