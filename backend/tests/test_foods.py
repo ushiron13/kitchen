@@ -92,6 +92,23 @@ async def test_delete_food(client):
     assert r2.status_code == 404
 
 
+async def test_delete_food_with_stock_returns_409(client):
+    food_r = await client.post(
+        "/api/v1/foods",
+        json={"name": "在庫付き食材", "category": "refrigerated"},
+        headers=HEADERS,
+    )
+    food_id = food_r.json()["id"]
+    await client.post(
+        "/api/v1/stock",
+        json={"food_id": food_id, "quantity": 1.0, "unit": "個"},
+        headers=HEADERS,
+    )
+    r = await client.delete(f"/api/v1/foods/{food_id}", headers=HEADERS)
+    assert r.status_code == 409
+    assert "在庫がある食材" in r.json()["detail"]
+
+
 async def test_unauthorized(client):
     r = await client.get("/api/v1/foods")
     assert r.status_code == 401
