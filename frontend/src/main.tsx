@@ -130,6 +130,10 @@ function makeApi(apiKey: string) {
       req<MealPlan>('/api/v1/meal-plans', { method: 'POST', body: JSON.stringify(p) }),
     getMealPlans: () => req<MealPlan[]>('/api/v1/meal-plans'),
     getMealPlan: (id: number) => req<MealPlan>(`/api/v1/meal-plans/${id}`),
+    deleteMealPlan: (planId: number) =>
+      fetch(`/api/v1/meal-plans/${planId}`, { method: 'DELETE', headers }).then(r => { if (!r.ok) throw new Error() }),
+    deleteMeal: (mealId: number) =>
+      fetch(`/api/v1/meals/${mealId}`, { method: 'DELETE', headers }).then(r => { if (!r.ok) throw new Error() }),
     getShoppingList: (planId: number) => req<ShoppingList>(`/api/v1/meal-plans/${planId}/shopping-list`),
 
     // Recipes
@@ -479,11 +483,21 @@ function CreatePlanForm({ api, onCreated }: { api: Api; onCreated: (p: MealPlan)
   )
 }
 
-function MealCard({ meal, api }: { meal: Meal; api: Api }) {
+function MealCard({ meal, api, onDelete }: { meal: Meal; api: Api; onDelete: () => void }) {
   const [loadedRecipe, setLoadedRecipe] = useState<Recipe | null>(null)
   const [showModal, setShowModal] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  async function handleDelete() {
+    if (!confirm(`「${meal.concept ?? '未設定'}」を削除しますか？`)) return
+    try {
+      await api.deleteMeal(meal.id)
+      onDelete()
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '削除失敗')
+    }
+  }
 
   // B-01: meal.recipe_id が真のステート。ローカルの recipe 状態に依存しない
   async function openRecipe() {
@@ -527,7 +541,7 @@ function MealCard({ meal, api }: { meal: Meal; api: Api }) {
             )}
             {error && <div style={{ color: 'red', fontSize: 11, marginTop: 4 }}>{error}</div>}
           </div>
-          <div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end' }}>
             {meal.recipe_id ? (
               <button style={{ ...S.btn('#1565c0'), fontSize: 12, padding: '5px 10px' }} onClick={openRecipe} disabled={loading}>
                 {loading ? '読み込み中…' : 'レシピ詳細'}
@@ -537,6 +551,9 @@ function MealCard({ meal, api }: { meal: Meal; api: Api }) {
                 {loading ? '生成中…' : 'レシピ生成'}
               </button>
             )}
+            <button style={{ ...S.btn('#e53935'), fontSize: 11, padding: '3px 8px' }} onClick={handleDelete} disabled={loading}>
+              削除
+            </button>
           </div>
         </div>
       </div>
@@ -562,6 +579,26 @@ function MealPlanPage({ api }: { api: Api }) {
   useEffect(() => { reload() }, [reload])
 
   const selected = plans.find(p => p.id === selectedId)
+
+  async function handleDeletePlan(planId: number) {
+    const plan = plans.find(p => p.id === planId)
+    if (!plan) return
+    if (!confirm(`プラン「${plan.start_date} 〜 ${plan.end_date}」を削除しますか？\n配下の全献立も削除されます。`)) return
+    try {
+      await api.deleteMealPlan(planId)
+      const next = plans.filter(p => p.id !== planId)
+      setPlans(next)
+      setSelectedId(next.length > 0 ? next[0].id : null)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : '削除失敗')
+    }
+  }
+
+  function handleMealDeleted(planId: number, mealId: number) {
+    setPlans(prev => prev.map(p =>
+      p.id === planId ? { ...p, meals: p.meals.filter(m => m.id !== mealId) } : p
+    ))
+  }
 
   function groupByDate(meals: Meal[]): Record<string, Meal[]> {
     const map: Record<string, Meal[]> = {}
@@ -597,17 +634,27 @@ function MealPlanPage({ api }: { api: Api }) {
         <>
           <div style={{ marginBottom: 12 }}>
             <div style={S.label}>プランを選択</div>
-            <select
-              style={S.input}
-              value={selectedId ?? ''}
-              onChange={e => setSelectedId(Number(e.target.value))}
-            >
-              {plans.map(p => (
-                <option key={p.id} value={p.id}>
-                  {p.start_date} 〜 {p.end_date}（{p.meals.length}食）
-                </option>
-              ))}
-            </select>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <select
+                style={{ ...S.input, flex: 1 }}
+                value={selectedId ?? ''}
+                onChange={e => setSelectedId(Number(e.target.value))}
+              >
+                {plans.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.start_date} 〜 {p.end_date}（{p.meals.length}食）
+                  </option>
+                ))}
+              </select>
+              {selectedId !== null && (
+                <button
+                  style={{ ...S.btn('#e53935'), whiteSpace: 'nowrap', fontSize: 13 }}
+                  onClick={() => handleDeletePlan(selectedId)}
+                >
+                  プラン削除
+                </button>
+              )}
+            </div>
           </div>
           {selected && (() => {
             const byDate = groupByDate(selected.meals)
@@ -620,7 +667,7 @@ function MealPlanPage({ api }: { api: Api }) {
                       {date}（{['日', '月', '火', '水', '木', '金', '土'][new Date(date + 'T00:00:00').getDay()]}）
                     </div>
                     {byDate[date].map(meal => (
-                      <MealCard key={meal.id} meal={meal} api={api} />
+                      <MealCard key={meal.id} meal={meal} api={api} onDelete={() => handleMealDeleted(selected.id, meal.id)} />
                     ))}
                   </div>
                 ))}
