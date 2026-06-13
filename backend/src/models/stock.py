@@ -14,6 +14,7 @@ class StockItem(Base):
     quantity: Mapped[float] = mapped_column(REAL, nullable=False)
     unit: Mapped[str] = mapped_column(Text, nullable=False)
     expiry_date: Mapped[Optional[str]] = mapped_column(Text)
+    purchased_date: Mapped[Optional[str]] = mapped_column(Text)
     opened: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     location: Mapped[Optional[str]] = mapped_column(Text)
     notes: Mapped[Optional[str]] = mapped_column(Text)

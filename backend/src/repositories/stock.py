@@ -24,6 +24,7 @@ class StockRepository:
             quantity=0.0,  # トリガーで更新されるため初期値 0
             unit=data.unit,
             expiry_date=data.expiry_date,
+            purchased_date=data.purchased_date,
             opened=1 if data.opened else 0,
             location=data.location,
             notes=data.notes,

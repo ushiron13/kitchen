@@ -10,6 +10,7 @@ class StockCreate(BaseModel):
     quantity: float = Field(..., gt=0)
     unit: str = Field(..., min_length=1, max_length=20)
     expiry_date: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    purchased_date: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     opened: bool = False
     location: Optional[str] = Field(None, max_length=50)
     notes: Optional[str] = Field(None, max_length=200)
@@ -19,6 +20,7 @@ class StockUpdate(BaseModel):
     quantity: Optional[float] = Field(None, ge=0)
     unit: Optional[str] = Field(None, min_length=1, max_length=20)
     expiry_date: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    purchased_date: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     opened: Optional[bool] = None
     location: Optional[str] = Field(None, max_length=50)
     notes: Optional[str] = Field(None, max_length=200)
@@ -29,9 +31,11 @@ class StockRead(BaseModel):
     food_id: int
     food_name: str
     food_category: str
+    default_shelf_days: Optional[int]
     quantity: float
     unit: str
     expiry_date: Optional[str]
+    purchased_date: Optional[str]
     opened: bool
     location: Optional[str]
     notes: Optional[str]
