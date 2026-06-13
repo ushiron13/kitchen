@@ -1,4 +1,3 @@
-import asyncio
 import json
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -64,7 +63,8 @@ async def create_meal_plan(
     """在庫を参照してLLMで献立スケルトンを生成し保存する。"""
     stock_repo = StockRepository(session)
     profile_repo = ProfileRepository(session)
-    items, profile = await asyncio.gather(stock_repo.list(), profile_repo.get())
+    items = await stock_repo.list()
+    profile = await profile_repo.get()
 
     if items:
         stock_summary = "\n".join(
@@ -76,12 +76,13 @@ async def create_meal_plan(
         stock_summary = "（在庫なし）"
 
     profile_parts = []
-    if profile.family_composition:
-        profile_parts.append(f"家族構成: {profile.family_composition}")
-    if profile.food_preferences:
-        profile_parts.append(f"食事傾向: {profile.food_preferences}")
-    if profile.allergies:
-        profile_parts.append(f"アレルギー・禁忌: {profile.allergies}")
+    if profile:
+        if profile.family_composition:
+            profile_parts.append(f"家族構成: {profile.family_composition}")
+        if profile.food_preferences:
+            profile_parts.append(f"食事傾向: {profile.food_preferences}")
+        if profile.allergies:
+            profile_parts.append(f"アレルギー・禁忌: {profile.allergies}")
     profile_text = "\n".join(profile_parts)
 
     graph = build_skeleton_graph()
