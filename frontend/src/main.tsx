@@ -16,9 +16,11 @@ interface StockItem {
   food_id: number
   food_name: string
   food_category: string
+  default_shelf_days: number | null
   quantity: number
   unit: string
   expiry_date: string | null
+  purchased_date: string | null
   opened: boolean
   location: string | null
 }
@@ -124,9 +126,9 @@ function makeApi(apiKey: string) {
         }
       }),
     getStock: () => req<StockItem[]>('/api/v1/stock'),
-    createStock: (p: { food_id: number; quantity: number; unit: string; expiry_date?: string }) =>
+    createStock: (p: { food_id: number; quantity: number; unit: string; expiry_date?: string; purchased_date?: string }) =>
       req<StockItem>('/api/v1/stock', { method: 'POST', body: JSON.stringify(p) }),
-    updateStock: (id: number, p: { quantity?: number; unit?: string; expiry_date?: string | null }) =>
+    updateStock: (id: number, p: { quantity?: number; unit?: string; expiry_date?: string | null; purchased_date?: string | null }) =>
       req<StockItem>(`/api/v1/stock/${id}`, { method: 'PATCH', body: JSON.stringify(p) }),
     consumeStock: (itemId: number, delta: number) =>
       req<StockItem>(`/api/v1/stock/${itemId}/transactions`, {
@@ -237,6 +239,7 @@ function EditStockModal({ api, item, onClose, onUpdated }: { api: Api; item: Sto
   const [quantity, setQuantity] = useState(item.quantity.toString())
   const [unit, setUnit] = useState(item.unit)
   const [expiry, setExpiry] = useState(item.expiry_date ?? '')
+  const [purchased, setPurchased] = useState(item.purchased_date ?? '')
   const [error, setError] = useState('')
 
   async function submit(e: React.FormEvent) {
@@ -246,6 +249,7 @@ function EditStockModal({ api, item, onClose, onUpdated }: { api: Api; item: Sto
         quantity: Number(quantity),
         unit,
         expiry_date: expiry || null,
+        purchased_date: purchased || null,
       })
       onUpdated()
     } catch (err: unknown) {
@@ -263,6 +267,7 @@ function EditStockModal({ api, item, onClose, onUpdated }: { api: Api; item: Sto
             <div style={{ flex: 2 }}><div style={S.label}>数量</div><input style={S.input} type="number" min={0} step={0.01} value={quantity} onChange={e => setQuantity(e.target.value)} required /></div>
             <div style={{ flex: 1 }}><div style={S.label}>単位</div><input style={S.input} value={unit} onChange={e => setUnit(e.target.value)} required /></div>
           </div>
+          <div><div style={S.label}>購入日（任意）</div><input style={S.input} type="date" value={purchased} onChange={e => setPurchased(e.target.value)} /></div>
           <div><div style={S.label}>消費期限（任意）</div><input style={S.input} type="date" value={expiry} onChange={e => setExpiry(e.target.value)} /></div>
           {error && <div style={{ color: 'red', fontSize: 12 }}>{error}</div>}
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
@@ -316,16 +321,24 @@ function AddFoodModal({ api, onClose, onCreated }: { api: Api; onClose: () => vo
 }
 
 function AddStockModal({ api, foods, onClose, onCreated }: { api: Api; foods: Food[]; onClose: () => void; onCreated: () => void }) {
+  const today = new Date().toISOString().slice(0, 10)
   const [foodId, setFoodId] = useState(foods[0]?.id?.toString() ?? '')
   const [quantity, setQuantity] = useState('')
   const [unit, setUnit] = useState('個')
+  const [purchased, setPurchased] = useState(today)
   const [expiry, setExpiry] = useState('')
   const [error, setError] = useState('')
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     try {
-      await api.createStock({ food_id: Number(foodId), quantity: Number(quantity), unit, ...(expiry ? { expiry_date: expiry } : {}) })
+      await api.createStock({
+        food_id: Number(foodId),
+        quantity: Number(quantity),
+        unit,
+        ...(purchased ? { purchased_date: purchased } : {}),
+        ...(expiry ? { expiry_date: expiry } : {}),
+      })
       onCreated()
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : '登録失敗')
@@ -347,6 +360,7 @@ function AddStockModal({ api, foods, onClose, onCreated }: { api: Api; foods: Fo
             <div style={{ flex: 2 }}><div style={S.label}>数量</div><input style={S.input} type="number" min={0.01} step={0.01} value={quantity} onChange={e => setQuantity(e.target.value)} required /></div>
             <div style={{ flex: 1 }}><div style={S.label}>単位</div><input style={S.input} value={unit} onChange={e => setUnit(e.target.value)} required /></div>
           </div>
+          <div><div style={S.label}>購入日（任意）</div><input style={S.input} type="date" value={purchased} onChange={e => setPurchased(e.target.value)} /></div>
           <div><div style={S.label}>消費期限（任意）</div><input style={S.input} type="date" value={expiry} onChange={e => setExpiry(e.target.value)} /></div>
           {error && <div style={{ color: 'red', fontSize: 12 }}>{error}</div>}
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
@@ -407,7 +421,26 @@ function StockPage({ api }: { api: Api }) {
 
   const today = new Date().toISOString().slice(0, 10)
   const warnDate = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10)
-  const expiringSoon = stock.filter(s => s.expiry_date && s.expiry_date <= warnDate)
+
+  function getShelfDeadline(item: StockItem): string | null {
+    if (item.expiry_date) return item.expiry_date
+    if (item.purchased_date && item.default_shelf_days) {
+      const d = new Date(item.purchased_date + 'T00:00:00')
+      d.setDate(d.getDate() + item.default_shelf_days)
+      return d.toISOString().slice(0, 10)
+    }
+    return null
+  }
+
+  function getDaysLeft(deadline: string): number {
+    const diff = new Date(deadline + 'T00:00:00').getTime() - new Date(today + 'T00:00:00').getTime()
+    return Math.ceil(diff / 86400000)
+  }
+
+  const expiringSoon = stock.filter(s => {
+    const dl = getShelfDeadline(s)
+    return dl && dl <= warnDate
+  })
 
   return (
     <div style={{ maxWidth: 600, margin: '0 auto', padding: '16px 12px', fontFamily: 'sans-serif' }}>
@@ -492,29 +525,50 @@ function StockPage({ api }: { api: Api }) {
             {filterCat ? `「${CATEGORY_LABELS[filterCat]}」の在庫がありません` : '在庫がありません'}
           </div>
         ) : filtered.map(item => (
-          <div key={item.id} style={{ ...S.card, opacity: item.expiry_date && item.expiry_date < today ? 0.6 : 1 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div>
-                <span style={{ fontWeight: 600 }}>{item.food_name}</span>
-                <span style={S.badge(item.food_category)}>{CATEGORY_LABELS[item.food_category] ?? item.food_category}</span>
-                {item.opened && <span style={{ ...S.badge('seasoning'), marginLeft: 4 }}>開封済</span>}
+          {(() => {
+            const deadline = getShelfDeadline(item)
+            const daysLeft = deadline ? getDaysLeft(deadline) : null
+            const isExpired = daysLeft !== null && daysLeft < 0
+            const isWarn = daysLeft !== null && daysLeft >= 0 && daysLeft <= 3
+            return (
+              <div key={item.id} style={{ ...S.card, opacity: isExpired ? 0.6 : 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div>
+                    <span style={{ fontWeight: 600 }}>{item.food_name}</span>
+                    <span style={S.badge(item.food_category)}>{CATEGORY_LABELS[item.food_category] ?? item.food_category}</span>
+                    {item.opened && <span style={{ ...S.badge('seasoning'), marginLeft: 4 }}>開封済</span>}
+                    {daysLeft !== null && (
+                      <span style={{
+                        marginLeft: 6, fontSize: 11, fontWeight: 600,
+                        color: isExpired ? '#e53935' : isWarn ? '#fb8c00' : '#888',
+                      }}>
+                        {isExpired ? `期限切れ(${Math.abs(daysLeft)}日前)` : daysLeft === 0 ? '今日まで' : `あと${daysLeft}日`}
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button style={S.btn('#43a047')} onClick={() => consume(item)}>消費</button>
+                    <button style={S.btn('#1565c0')} onClick={() => setEditStock(item)}>編集</button>
+                    <button style={S.btn('#e53935')} onClick={() => removeStock(item)}>削除</button>
+                  </div>
+                </div>
+                <div style={{ marginTop: 4, fontSize: 13, color: '#555' }}>
+                  {item.quantity} {item.unit}
+                  {item.expiry_date && (
+                    <span style={{ marginLeft: 12, color: isExpired ? '#e53935' : isWarn ? '#fb8c00' : '#888' }}>
+                      期限: {item.expiry_date}
+                    </span>
+                  )}
+                  {!item.expiry_date && item.purchased_date && item.default_shelf_days && (
+                    <span style={{ marginLeft: 12, color: '#aaa' }}>
+                      購入: {item.purchased_date}（目安{item.default_shelf_days}日）
+                    </span>
+                  )}
+                  {item.location && <span style={{ marginLeft: 12, color: '#888' }}>{item.location}</span>}
+                </div>
               </div>
-              <div style={{ display: 'flex', gap: 6 }}>
-                <button style={S.btn('#43a047')} onClick={() => consume(item)}>消費</button>
-                <button style={S.btn('#1565c0')} onClick={() => setEditStock(item)}>編集</button>
-                <button style={S.btn('#e53935')} onClick={() => removeStock(item)}>削除</button>
-              </div>
-            </div>
-            <div style={{ marginTop: 4, fontSize: 13, color: '#555' }}>
-              {item.quantity} {item.unit}
-              {item.expiry_date && (
-                <span style={{ marginLeft: 12, color: item.expiry_date < today ? '#e53935' : item.expiry_date <= warnDate ? '#fb8c00' : '#888' }}>
-                  期限: {item.expiry_date}
-                </span>
-              )}
-              {item.location && <span style={{ marginLeft: 12, color: '#888' }}>{item.location}</span>}
-            </div>
-          </div>
+            )
+          })()}
         ))
       })()}
       {modal === 'food' && <AddFoodModal api={api} onClose={() => setModal(null)} onCreated={f => { setFoods(prev => [...prev, f]); setModal(null) }} />}
