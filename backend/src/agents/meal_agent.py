@@ -55,6 +55,7 @@ class SkeletonState(TypedDict):
     days: int
     meal_types: list[str]
     preferences: str  # ユーザーの自然言語要望（例: "和食多め、30分以内"）
+    profile_text: str  # ユーザープロファイル（F-05: 家族構成・食事傾向・アレルギー）
     prompt_text: str
     raw_response: str
     meals: list[dict]
@@ -63,8 +64,10 @@ class SkeletonState(TypedDict):
 
 def _build_skeleton_prompt(state: SkeletonState) -> SkeletonState:
     types_str = "、".join(state["meal_types"])
-    pref_line = f"要望: {state['preferences']}\n" if state.get("preferences") else ""
+    pref_line = f"今回の要望: {state['preferences']}\n" if state.get("preferences") else ""
+    profile_line = f"家族プロファイル:\n{state['profile_text']}\n\n" if state.get("profile_text") else ""
     text = (
+        f"{profile_line}"
         f"在庫食材:\n{state['stock_summary']}\n\n"
         f"期間: {state['start_date']} から {state['days']} 日間\n"
         f"食事区分: {types_str}\n"
@@ -86,6 +89,7 @@ def _call_skeleton_llm(state: SkeletonState) -> SkeletonState:
     messages = [
         SystemMessage(content=(
             "あなたは家庭の献立を提案するアシスタントです。"
+            "プロファイルに記載された家族の嗜好・アレルギーを必ず考慮してください。"
             "JSONのみ出力し、説明やコードブロックは使わないでください。"
         )),
         HumanMessage(content=state["prompt_text"]),
