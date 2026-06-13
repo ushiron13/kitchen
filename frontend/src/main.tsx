@@ -536,8 +536,7 @@ function StockPage({ api }: { api: Api }) {
           <div style={{ textAlign: 'center', color: '#aaa', padding: 40 }}>
             {filterCat ? `「${CATEGORY_LABELS[filterCat]}」の在庫がありません` : '在庫がありません'}
           </div>
-        ) : filtered.map(item => (
-          {(() => {
+        ) : filtered.map(item => {
             const deadline = getShelfDeadline(item)
             const daysLeft = deadline ? getDaysLeft(deadline) : null
             const isExpired = daysLeft !== null && daysLeft < 0
@@ -580,8 +579,7 @@ function StockPage({ api }: { api: Api }) {
                 </div>
               </div>
             )
-          })()}
-        ))
+          })
       })()}
       {modal === 'food' && <AddFoodModal api={api} onClose={() => setModal(null)} onCreated={f => { setFoods(prev => [...prev, f]); setModal(null) }} />}
       {modal === 'stock' && <AddStockModal api={api} foods={foods} onClose={() => setModal(null)} onCreated={() => { reload(); setModal(null) }} />}
