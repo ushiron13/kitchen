@@ -74,6 +74,13 @@ interface Recipe {
   updated_at: string
 }
 
+interface UserProfile {
+  family_composition: string | null
+  food_preferences: string | null
+  allergies: string | null
+  updated_at: string
+}
+
 interface ShoppingItem {
   name: string
   in_stock: boolean
@@ -167,6 +174,11 @@ function makeApi(apiKey: string) {
         method: 'POST',
         body: JSON.stringify({ food_names: foodNames, count }),
       }),
+
+    // Profile
+    getProfile: () => req<UserProfile>('/api/v1/profile'),
+    updateProfile: (p: { family_composition?: string | null; food_preferences?: string | null; allergies?: string | null }) =>
+      req<UserProfile>('/api/v1/profile', { method: 'PUT', body: JSON.stringify(p) }),
   }
 }
 
@@ -1056,14 +1068,106 @@ function ShoppingPage({ api }: { api: Api }) {
   )
 }
 
+// ---- Profile Page ----
+function ProfilePage({ api }: { api: Api }) {
+  const [family, setFamily] = useState('')
+  const [prefs, setPrefs] = useState('')
+  const [allergies, setAllergies] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [savedAt, setSavedAt] = useState<string | null>(null)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    api.getProfile()
+      .then(p => {
+        setFamily(p.family_composition ?? '')
+        setPrefs(p.food_preferences ?? '')
+        setAllergies(p.allergies ?? '')
+        setSavedAt(p.updated_at)
+      })
+      .catch(e => setError(e instanceof Error ? e.message : '読み込み失敗'))
+      .finally(() => setLoading(false))
+  }, [api])
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    setSaving(true); setError('')
+    try {
+      const p = await api.updateProfile({
+        family_composition: family || null,
+        food_preferences: prefs || null,
+        allergies: allergies || null,
+      })
+      setSavedAt(p.updated_at)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '保存失敗')
+    } finally { setSaving(false) }
+  }
+
+  if (loading) return <div style={{ textAlign: 'center', padding: 40, color: '#888' }}>読み込み中…</div>
+
+  return (
+    <div style={{ maxWidth: 600, margin: '0 auto', padding: '16px 12px', fontFamily: 'sans-serif' }}>
+      <h2 style={{ margin: '0 0 4px', fontSize: 20 }}>プロファイル設定</h2>
+      <p style={{ margin: '0 0 20px', fontSize: 12, color: '#888' }}>
+        献立生成時に自動で反映されます。毎回の「要望」欄は一時的な追加要望のみに使えます。
+      </p>
+      {error && <div style={{ color: 'red', marginBottom: 12, fontSize: 13 }}>{error}</div>}
+      <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+        <div>
+          <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>家族構成</div>
+          <div style={{ fontSize: 11, color: '#888', marginBottom: 6 }}>例: 大人2名（夫婦）、子供なし</div>
+          <input
+            style={S.input}
+            value={family}
+            onChange={e => setFamily(e.target.value)}
+            placeholder="大人2名（30代夫婦）"
+            maxLength={200}
+          />
+        </div>
+        <div>
+          <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>食事傾向・嗜好</div>
+          <div style={{ fontSize: 11, color: '#888', marginBottom: 6 }}>例: 朝は簡単に、夜は和食多め、週2回魚を食べたい</div>
+          <textarea
+            style={{ ...S.input, height: 80, resize: 'vertical' as const }}
+            value={prefs}
+            onChange={e => setPrefs(e.target.value)}
+            placeholder="朝は簡単に済ませたい。夜は和食を多めに。調理時間は30分以内が好ましい。"
+            maxLength={500}
+          />
+        </div>
+        <div>
+          <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>アレルギー・禁忌食材</div>
+          <div style={{ fontSize: 11, color: '#888', marginBottom: 6 }}>例: えび・かにアレルギー、パクチー嫌い</div>
+          <input
+            style={S.input}
+            value={allergies}
+            onChange={e => setAllergies(e.target.value)}
+            placeholder="なし"
+            maxLength={200}
+          />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button type="submit" style={S.btn()} disabled={saving}>
+            {saving ? '保存中…' : '保存する'}
+          </button>
+          {savedAt && <span style={{ fontSize: 12, color: '#888' }}>最終更新: {savedAt.slice(0, 16)}</span>}
+        </div>
+      </form>
+    </div>
+  )
+}
+
 // ---- Navigation ----
-type Page = 'stock' | 'meal' | 'shopping'
+type Page = 'stock' | 'meal' | 'shopping' | 'profile'
 
 function BottomNav({ page, setPage }: { page: Page; setPage: (p: Page) => void }) {
   const tabs: { id: Page; label: string; icon: string }[] = [
     { id: 'stock', label: '在庫', icon: '🥕' },
     { id: 'meal', label: '献立', icon: '🍽' },
     { id: 'shopping', label: '買い物', icon: '🛒' },
+    { id: 'profile', label: '設定', icon: '⚙' },
   ]
   return (
     <nav style={{
@@ -1123,6 +1227,7 @@ function App() {
       {page === 'stock' && <StockPage api={api} />}
       {page === 'meal' && <MealPlanPage api={api} />}
       {page === 'shopping' && <ShoppingPage api={api} />}
+      {page === 'profile' && <ProfilePage api={api} />}
       <BottomNav page={page} setPage={setPage} />
     </div>
   )
