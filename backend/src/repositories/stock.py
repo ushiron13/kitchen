@@ -25,6 +25,7 @@ class StockRepository:
             unit=data.unit,
             expiry_date=data.expiry_date,
             purchased_date=data.purchased_date,
+            category=data.category,
             opened=1 if data.opened else 0,
             location=data.location,
             notes=data.notes,
@@ -71,7 +72,9 @@ class StockRepository:
         if food_id is not None:
             stmt = stmt.where(StockItem.food_id == food_id)
         if category:
-            stmt = stmt.where(FoodMaster.category == category)
+            from sqlalchemy import case, coalesce
+            effective_category = coalesce(StockItem.category, FoodMaster.category)
+            stmt = stmt.where(effective_category == category)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 

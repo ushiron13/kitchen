@@ -21,7 +21,7 @@ def _to_read(item) -> StockRead:
         id=item.id,
         food_id=item.food_id,
         food_name=item.food.name,
-        food_category=item.food.category,
+        food_category=item.category or item.food.category,
         default_shelf_days=item.food.default_shelf_days,
         quantity=item.quantity,
         unit=item.unit,

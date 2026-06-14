@@ -133,9 +133,9 @@ function makeApi(apiKey: string) {
         }
       }),
     getStock: () => req<StockItem[]>('/api/v1/stock'),
-    createStock: (p: { food_id: number; quantity: number; unit: string; expiry_date?: string; purchased_date?: string }) =>
+    createStock: (p: { food_id: number; quantity: number; unit: string; expiry_date?: string; purchased_date?: string; category?: string }) =>
       req<StockItem>('/api/v1/stock', { method: 'POST', body: JSON.stringify(p) }),
-    updateStock: (id: number, p: { quantity?: number; unit?: string; expiry_date?: string | null; purchased_date?: string | null }) =>
+    updateStock: (id: number, p: { quantity?: number; unit?: string; expiry_date?: string | null; purchased_date?: string | null; category?: string | null }) =>
       req<StockItem>(`/api/v1/stock/${id}`, { method: 'PATCH', body: JSON.stringify(p) }),
     consumeStock: (itemId: number, delta: number) =>
       req<StockItem>(`/api/v1/stock/${itemId}/transactions`, {
@@ -252,6 +252,7 @@ function EditStockModal({ api, item, onClose, onUpdated }: { api: Api; item: Sto
   const [unit, setUnit] = useState(item.unit)
   const [expiry, setExpiry] = useState(item.expiry_date ?? '')
   const [purchased, setPurchased] = useState(item.purchased_date ?? '')
+  const [category, setCategory] = useState(item.food_category ?? '')
   const [error, setError] = useState('')
 
   async function submit(e: React.FormEvent) {
@@ -262,6 +263,7 @@ function EditStockModal({ api, item, onClose, onUpdated }: { api: Api; item: Sto
         unit,
         expiry_date: expiry || null,
         purchased_date: purchased || null,
+        category: category || null,
       })
       onUpdated()
     } catch (err: unknown) {
@@ -278,6 +280,13 @@ function EditStockModal({ api, item, onClose, onUpdated }: { api: Api; item: Sto
           <div style={{ display: 'flex', gap: 8 }}>
             <div style={{ flex: 2 }}><div style={S.label}>数量</div><input style={S.input} type="number" min={0} step={0.01} value={quantity} onChange={e => setQuantity(e.target.value)} required /></div>
             <div style={{ flex: 1 }}><div style={S.label}>単位</div><input style={S.input} value={unit} onChange={e => setUnit(e.target.value)} required /></div>
+          </div>
+          <div>
+            <div style={S.label}>保管場所</div>
+            <select style={S.input} value={category} onChange={e => setCategory(e.target.value)}>
+              <option value="">── デフォルト ──</option>
+              {Object.entries(CATEGORY_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
           </div>
           <div><div style={S.label}>購入日（任意）</div><input style={S.input} type="date" value={purchased} onChange={e => setPurchased(e.target.value)} /></div>
           <div><div style={S.label}>消費期限（任意）</div><input style={S.input} type="date" value={expiry} onChange={e => setExpiry(e.target.value)} /></div>
@@ -334,22 +343,31 @@ function AddFoodModal({ api, onClose, onCreated }: { api: Api; onClose: () => vo
 
 function AddStockModal({ api, foods, onClose, onCreated }: { api: Api; foods: Food[]; onClose: () => void; onCreated: () => void }) {
   const today = new Date().toISOString().slice(0, 10)
-  const [foodId, setFoodId] = useState(foods[0]?.id?.toString() ?? '')
+  const [foodName, setFoodName] = useState('')
+  const [category, setCategory] = useState('')
   const [quantity, setQuantity] = useState('')
   const [unit, setUnit] = useState('個')
   const [purchased, setPurchased] = useState(today)
   const [expiry, setExpiry] = useState('')
   const [error, setError] = useState('')
 
+  const selectedFood = foods.find(f => f.name === foodName)
+
+  useEffect(() => {
+    if (selectedFood) setCategory(selectedFood.category)
+  }, [selectedFood])
+
   async function submit(e: React.FormEvent) {
     e.preventDefault()
+    if (!selectedFood) { setError('食材名を正確に入力してください'); return }
     try {
       await api.createStock({
-        food_id: Number(foodId),
+        food_id: selectedFood.id,
         quantity: Number(quantity),
         unit,
         ...(purchased ? { purchased_date: purchased } : {}),
         ...(expiry ? { expiry_date: expiry } : {}),
+        ...(category ? { category } : {}),
       })
       onCreated()
     } catch (err: unknown) {
@@ -363,9 +381,24 @@ function AddStockModal({ api, foods, onClose, onCreated }: { api: Api; foods: Fo
         <h3 style={{ margin: '0 0 16px' }}>在庫追加</h3>
         <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div>
-            <div style={S.label}>食材</div>
-            <select style={S.input} value={foodId} onChange={e => setFoodId(e.target.value)} required>
-              {foods.map(f => <option key={f.id} value={f.id}>{f.name}（{CATEGORY_LABELS[f.category]}）</option>)}
+            <div style={S.label}>食材（入力で絞り込み）</div>
+            <input
+              style={S.input}
+              list="food-datalist-add"
+              value={foodName}
+              onChange={e => setFoodName(e.target.value)}
+              placeholder="例: 豚バラ肉"
+              required
+            />
+            <datalist id="food-datalist-add">
+              {foods.map(f => <option key={f.id} value={f.name} />)}
+            </datalist>
+          </div>
+          <div>
+            <div style={S.label}>保管場所（食材デフォルトを上書き可）</div>
+            <select style={S.input} value={category} onChange={e => setCategory(e.target.value)}>
+              <option value="">── デフォルト ──</option>
+              {Object.entries(CATEGORY_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>

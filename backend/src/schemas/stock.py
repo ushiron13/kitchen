@@ -3,6 +3,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field, field_validator
 
 TxType = Literal["in", "out", "consume", "waste", "adjust"]
+CategoryType = Literal["refrigerated", "frozen", "pantry", "ambient", "seasoning"]
 
 
 class StockCreate(BaseModel):
@@ -11,6 +12,7 @@ class StockCreate(BaseModel):
     unit: str = Field(..., min_length=1, max_length=20)
     expiry_date: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     purchased_date: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    category: Optional[CategoryType] = None
     opened: bool = False
     location: Optional[str] = Field(None, max_length=50)
     notes: Optional[str] = Field(None, max_length=200)
@@ -21,6 +23,7 @@ class StockUpdate(BaseModel):
     unit: Optional[str] = Field(None, min_length=1, max_length=20)
     expiry_date: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     purchased_date: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    category: Optional[CategoryType] = None
     opened: Optional[bool] = None
     location: Optional[str] = Field(None, max_length=50)
     notes: Optional[str] = Field(None, max_length=200)
