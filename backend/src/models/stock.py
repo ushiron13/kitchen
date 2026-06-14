@@ -15,6 +15,7 @@ class StockItem(Base):
     unit: Mapped[str] = mapped_column(Text, nullable=False)
     expiry_date: Mapped[Optional[str]] = mapped_column(Text)
     purchased_date: Mapped[Optional[str]] = mapped_column(Text)
+    category: Mapped[Optional[str]] = mapped_column(Text)
     opened: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     location: Mapped[Optional[str]] = mapped_column(Text)
     notes: Mapped[Optional[str]] = mapped_column(Text)
@@ -29,6 +30,10 @@ class StockItem(Base):
     __table_args__ = (
         CheckConstraint("quantity >= 0", name="ck_stock_item_quantity"),
         CheckConstraint("opened IN (0,1)", name="ck_stock_item_opened"),
+        CheckConstraint(
+            "category IS NULL OR category IN ('refrigerated','frozen','pantry','ambient','seasoning')",
+            name="ck_stock_item_category",
+        ),
         Index("idx_stock_item_food_id", "food_id"),
         Index("idx_stock_item_expiry_date", "expiry_date"),
     )
