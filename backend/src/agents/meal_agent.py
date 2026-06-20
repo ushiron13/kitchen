@@ -135,15 +135,42 @@ class RecipeState(TypedDict):
     error: Optional[str]
 
 
+_RECIPE_FORMAT = (
+    "## 材料（2〜4人前）\n"
+    "- 食材名: 分量・単位\n\n"
+    "## 下準備（省略可）\n"
+    "- 下準備の手順\n\n"
+    "## 手順\n"
+    "1. 手順の説明\n\n"
+    "## Tips（省略可）\n"
+    "- コツや補足\n"
+)
+
+_RECIPE_EXAMPLE = (
+    '{"name":"豚の生姜焼き",'
+    '"instructions_md":"## 材料（2〜4人前）\\n'
+    '- 豚ロース薄切り: 300g\\n- 玉ねぎ: 1/2個\\n- しょうゆ: 大さじ2\\n'
+    '- みりん: 大さじ1\\n- 砂糖: 小さじ1\\n\\n'
+    '## 手順\\n1. 豚肉は食べやすい大きさに切る\\n'
+    '2. 玉ねぎは薄切りにする\\n3. フライパンに油を熱し、玉ねぎを炒める\\n'
+    '4. 豚肉を加えて炒め、調味料を絡めて完成",'
+    '"cook_time_min":20,"cost_estimate":"600円程度",'
+    '"ingredients":['
+    '{"raw_name":"豚ロース薄切り","quantity":300.0,"unit":"g","is_main":true},'
+    '{"raw_name":"玉ねぎ","quantity":0.5,"unit":"個","is_main":false}]}'
+)
+
+
 def _build_recipe_prompt(state: RecipeState) -> RecipeState:
     ingr_str = "、".join(state["estimated_ingredients"]) or "適宜"
     text = (
         f"料理名: {state['concept']}\n"
         f"利用可能な食材: {ingr_str}\n\n"
-        "家庭で作りやすい2〜4人前のレシピをJSONのみで出力してください:\n"
-        '{"name":"料理名","instructions_md":"## 材料\\n...\\n\\n## 手順\\n1. ...",'
-        '"cook_time_min":30,"cost_estimate":"500円程度",'
-        '"ingredients":[{"raw_name":"食材","quantity":100.0,"unit":"g","is_main":true}]}'
+        "家庭で作りやすい2〜4人前のレシピをJSONで出力してください。\n"
+        "instructions_md は必ず以下のフォーマットに従ってください:\n\n"
+        f"{_RECIPE_FORMAT}\n"
+        "出力例:\n"
+        f"{_RECIPE_EXAMPLE}"
     )
     return {**state, "prompt_text": text}
 
@@ -158,6 +185,8 @@ def _call_recipe_llm(state: RecipeState) -> RecipeState:
     messages = [
         SystemMessage(content=(
             "あなたはプロの料理家です。家庭で実践できる詳細なレシピをJSON形式で出力してください。"
+            "instructions_md のセクション見出しは必ず ## を使い、"
+            "材料は '- 食材名: 分量・単位' 形式、手順は '1. ' から始まる番号リスト形式で統一してください。"
             "説明やコードブロックは使わず、JSONのみ出力してください。"
         )),
         HumanMessage(content=state["prompt_text"]),

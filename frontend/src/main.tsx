@@ -637,10 +637,20 @@ function StockPage({ api }: { api: Api }) {
 }
 
 // ---- Recipe Modal ----
+function inlineRender(text: string): React.ReactNode[] {
+  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g)
+  return parts.map((part, i) => {
+    if (/^\*\*(.+)\*\*$/.test(part)) return <strong key={i}>{part.slice(2, -2)}</strong>
+    if (/^\*(.+)\*$/.test(part)) return <em key={i}>{part.slice(1, -1)}</em>
+    if (/^`(.+)`$/.test(part)) return <code key={i} style={{ background: '#f5f5f5', padding: '1px 4px', borderRadius: 3, fontSize: 12, fontFamily: 'monospace' }}>{part.slice(1, -1)}</code>
+    return part
+  })
+}
+
 function SimpleMarkdown({ text }: { text: string }) {
   const lines = text.split('\n')
   const elements: React.ReactNode[] = []
-  let listBuf: string[] = []
+  let listBuf: React.ReactNode[][] = []
   let listType: 'ul' | 'ol' | null = null
 
   function flushList() {
@@ -648,27 +658,34 @@ function SimpleMarkdown({ text }: { text: string }) {
     const Tag = listType!
     elements.push(
       <Tag key={elements.length} style={{ margin: '4px 0 4px 20px', padding: 0 }}>
-        {listBuf.map((t, i) => <li key={i} style={{ marginBottom: 2 }}>{t}</li>)}
+        {listBuf.map((nodes, i) => <li key={i} style={{ marginBottom: 2 }}>{nodes}</li>)}
       </Tag>
     )
     listBuf = []; listType = null
   }
 
   for (const line of lines) {
-    if (/^#{1,3}\s/.test(line)) {
+    const hMatch = line.match(/^(#{1,3})\s(.+)/)
+    if (hMatch) {
       flushList()
-      elements.push(<h4 key={elements.length} style={{ margin: '10px 0 4px', fontSize: 14 }}>{line.replace(/^#+\s/, '')}</h4>)
+      const level = hMatch[1].length
+      const headingStyle: React.CSSProperties = level === 1
+        ? { margin: '12px 0 4px', fontSize: 15, fontWeight: 700, borderBottom: '1px solid #eee', paddingBottom: 2 }
+        : level === 2
+        ? { margin: '10px 0 4px', fontSize: 14, fontWeight: 600 }
+        : { margin: '8px 0 2px', fontSize: 13, fontWeight: 600, color: '#555' }
+      elements.push(<div key={elements.length} style={headingStyle}>{hMatch[2]}</div>)
     } else if (/^\d+\.\s/.test(line)) {
       if (listType === 'ul') flushList()
       listType = 'ol'
-      listBuf.push(line.replace(/^\d+\.\s/, ''))
+      listBuf.push(inlineRender(line.replace(/^\d+\.\s/, '')))
     } else if (/^[-*]\s/.test(line)) {
       if (listType === 'ol') flushList()
       listType = 'ul'
-      listBuf.push(line.replace(/^[-*]\s/, ''))
+      listBuf.push(inlineRender(line.replace(/^[-*]\s/, '')))
     } else {
       flushList()
-      if (line.trim()) elements.push(<p key={elements.length} style={{ margin: '4px 0', fontSize: 13 }}>{line}</p>)
+      if (line.trim()) elements.push(<p key={elements.length} style={{ margin: '4px 0', fontSize: 13 }}>{inlineRender(line)}</p>)
     }
   }
   flushList()
