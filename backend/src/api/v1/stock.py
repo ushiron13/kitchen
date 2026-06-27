@@ -48,8 +48,9 @@ async def create_stock(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Invalid food_id",
         ) from err
-    item = await repo.get(item.id)
-    return _to_read(item)
+    fetched = await repo.get(item.id)
+    assert fetched is not None
+    return _to_read(fetched)
 
 
 @router.get("", response_model=list[StockRead])

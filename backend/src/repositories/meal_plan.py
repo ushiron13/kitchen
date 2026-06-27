@@ -54,14 +54,16 @@ class MealPlanRepository:
             self.session.add(meal)
 
         await self.session.flush()
-        return await self.get(plan.id)
+        result = await self.get(plan.id)
+        assert result is not None
+        return result
 
     async def get(self, plan_id: int) -> MealPlan | None:
         stmt = select(MealPlan).where(MealPlan.id == plan_id).options(selectinload(MealPlan.meals))
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def list(self) -> list[MealPlan]:
+    async def list_all(self) -> list[MealPlan]:
         stmt = (
             select(MealPlan)
             .options(selectinload(MealPlan.meals))

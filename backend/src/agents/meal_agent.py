@@ -5,6 +5,7 @@ import re
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, StateGraph
+from pydantic import SecretStr
 from typing_extensions import TypedDict
 
 from src.core.config import settings
@@ -82,11 +83,11 @@ def _build_skeleton_prompt(state: SkeletonState) -> SkeletonState:
 
 
 def _call_skeleton_llm(state: SkeletonState) -> SkeletonState:
-    llm = ChatAnthropic(
+    llm = ChatAnthropic(  # type: ignore[call-arg]
         model=_SONNET,
-        api_key=settings.anthropic_api_key,
+        api_key=SecretStr(settings.anthropic_api_key),
         temperature=0.7,
-        max_tokens=4096,  # 多めの食事区分・日数でも切れないように拡張
+        max_tokens=4096,
     )
     messages = [
         SystemMessage(
@@ -181,9 +182,9 @@ def _build_recipe_prompt(state: RecipeState) -> RecipeState:
 
 
 def _call_recipe_llm(state: RecipeState) -> RecipeState:
-    llm = ChatAnthropic(
+    llm = ChatAnthropic(  # type: ignore[call-arg]
         model=_SONNET,
-        api_key=settings.anthropic_api_key,
+        api_key=SecretStr(settings.anthropic_api_key),
         temperature=0.5,
         max_tokens=4096,
     )

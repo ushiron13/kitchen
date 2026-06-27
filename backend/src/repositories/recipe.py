@@ -40,7 +40,9 @@ class RecipeRepository:
             self.session.add(ingredient)
 
         await self.session.flush()
-        return await self.get(recipe.id)
+        result = await self.get(recipe.id)
+        assert result is not None
+        return result
 
     async def get(self, recipe_id: int) -> Recipe | None:
         stmt = (

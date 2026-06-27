@@ -32,4 +32,4 @@ class Settings(BaseSettings):
     tz: str = "Asia/Tokyo"
 
 
-settings = Settings()
+settings = Settings()  # type: ignore[call-arg]

@@ -118,7 +118,7 @@ async def list_meal_plans(
     session: AsyncSession = Depends(get_session),
 ) -> list[MealPlanRead]:
     repo = MealPlanRepository(session)
-    plans = await repo.list()
+    plans = await repo.list_all()
     return [_plan_to_read(p) for p in plans]
 
 

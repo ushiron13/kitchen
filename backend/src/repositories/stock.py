@@ -69,7 +69,7 @@ class StockRepository:
         if food_id is not None:
             stmt = stmt.where(StockItem.food_id == food_id)
         if category:
-            from sqlalchemy import coalesce
+            from sqlalchemy.sql.functions import coalesce
 
             effective_category = coalesce(StockItem.category, FoodMaster.category)
             stmt = stmt.where(effective_category == category)
