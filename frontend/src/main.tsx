@@ -1,6 +1,7 @@
-import { StrictMode, useState, useEffect, useCallback } from 'react'
+import { StrictMode, useState, useEffect, useCallback, useRef } from 'react'
 import { createRoot } from 'react-dom/client'
 import { makeLocalApi } from './lib/localApi'
+import { exportData, importData } from './lib/backup'
 
 const API_KEY_STORAGE = 'kitchen_api_key'
 
@@ -1169,6 +1170,11 @@ function ProfilePage({ api }: { api: Api }) {
   const [savedAt, setSavedAt] = useState<string | null>(null)
   const [error, setError] = useState('')
 
+  const [exporting, setExporting] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [backupMsg, setBackupMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
   useEffect(() => {
     api.getProfile()
       .then(p => {
@@ -1194,6 +1200,38 @@ function ProfilePage({ api }: { api: Api }) {
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : '保存失敗')
     } finally { setSaving(false) }
+  }
+
+  async function handleExport() {
+    setExporting(true); setBackupMsg(null)
+    try {
+      await exportData()
+      setBackupMsg({ type: 'ok', text: 'エクスポート完了。ダウンロードフォルダを確認してください。' })
+    } catch (e: unknown) {
+      setBackupMsg({ type: 'err', text: e instanceof Error ? e.message : 'エクスポート失敗' })
+    } finally { setExporting(false) }
+  }
+
+  async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!confirm('現在のデータをすべて上書きして復元しますか？この操作は元に戻せません。')) {
+      e.target.value = ''
+      return
+    }
+    setImporting(true); setBackupMsg(null)
+    try {
+      const result = await importData(file)
+      setBackupMsg({
+        type: 'ok',
+        text: `インポート完了 — 食材: ${result.foods}件、在庫: ${result.stockItems}件、レシピ: ${result.recipes}件、献立: ${result.mealPlans}件`,
+      })
+    } catch (e: unknown) {
+      setBackupMsg({ type: 'err', text: e instanceof Error ? e.message : 'インポート失敗' })
+    } finally {
+      setImporting(false)
+      e.target.value = ''
+    }
   }
 
   if (loading) return <div style={{ textAlign: 'center', padding: 40, color: '#888' }}>読み込み中…</div>
@@ -1246,6 +1284,47 @@ function ProfilePage({ api }: { api: Api }) {
           {savedAt && <span style={{ fontSize: 12, color: '#888' }}>最終更新: {savedAt.slice(0, 16)}</span>}
         </div>
       </form>
+
+      {/* バックアップ */}
+      <div style={{ marginTop: 32, borderTop: '1px solid #eee', paddingTop: 24 }}>
+        <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 4 }}>データのバックアップ</div>
+        <p style={{ fontSize: 12, color: '#888', margin: '0 0 16px' }}>
+          データはこの端末内にのみ保存されています。機種変更や Safari のデータ消去に備えて定期的にバックアップを取ってください。
+        </p>
+        {backupMsg && (
+          <div style={{
+            background: backupMsg.type === 'ok' ? '#e8f5e9' : '#ffebee',
+            border: `1px solid ${backupMsg.type === 'ok' ? '#a5d6a7' : '#ef9a9a'}`,
+            borderRadius: 6, padding: '8px 12px', fontSize: 13, marginBottom: 12,
+            color: backupMsg.type === 'ok' ? '#2e7d32' : '#c62828',
+          }}>
+            {backupMsg.text}
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <button
+            style={S.btn('#1565c0')}
+            onClick={handleExport}
+            disabled={exporting}
+          >
+            {exporting ? 'エクスポート中…' : 'JSONでエクスポート'}
+          </button>
+          <button
+            style={S.btn('#555')}
+            onClick={() => fileInputRef.current?.click()}
+            disabled={importing}
+          >
+            {importing ? 'インポート中…' : 'JSONからインポート'}
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json,application/json"
+            style={{ display: 'none' }}
+            onChange={handleImport}
+          />
+        </div>
+      </div>
     </div>
   )
 }
