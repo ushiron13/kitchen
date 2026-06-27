@@ -8,6 +8,7 @@ from src.core.database import get_session
 from src.core.security import verify_api_key
 from src.repositories.meal_plan import MealPlanRepository
 from src.repositories.recipe import RecipeRepository
+from src.schemas.meal_plan import MealStatusUpdate
 from src.schemas.recipe import RecipeIngredientRead, RecipeRead
 
 router = APIRouter(
@@ -41,6 +42,31 @@ def _recipe_to_read(recipe) -> RecipeRead:
         created_at=recipe.created_at,
         updated_at=recipe.updated_at,
     )
+
+
+@router.patch("/{meal_id}/status", status_code=status.HTTP_204_NO_CONTENT)
+async def update_meal_status(
+    meal_id: int,
+    data: MealStatusUpdate,
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    repo = MealPlanRepository(session)
+    meal = await repo.update_meal_status(meal_id, data.status)
+    if meal is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Meal not found")
+    await session.commit()
+
+
+@router.delete("/{meal_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_meal(
+    meal_id: int,
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    repo = MealPlanRepository(session)
+    deleted = await repo.delete_meal(meal_id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Meal not found")
+    await session.commit()
 
 
 @router.post("/{meal_id}/recipe", response_model=RecipeRead, status_code=status.HTTP_201_CREATED)
@@ -77,14 +103,16 @@ async def generate_recipe_for_meal(
         return _recipe_to_read(recipe)
 
     graph = build_recipe_graph()
-    result = await graph.ainvoke({
-        "concept": concept,
-        "estimated_ingredients": ingredients,
-        "prompt_text": "",
-        "raw_response": "",
-        "recipe": None,
-        "error": None,
-    })
+    result = await graph.ainvoke(
+        {
+            "concept": concept,
+            "estimated_ingredients": ingredients,
+            "prompt_text": "",
+            "raw_response": "",
+            "recipe": None,
+            "error": None,
+        }
+    )
 
     if result.get("error") or not result.get("recipe"):
         raise HTTPException(

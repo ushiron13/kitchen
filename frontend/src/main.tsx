@@ -1,5 +1,7 @@
-import { StrictMode, useState, useEffect, useCallback } from 'react'
+import { StrictMode, useState, useEffect, useCallback, useRef } from 'react'
 import { createRoot } from 'react-dom/client'
+import { makeLocalApi } from './lib/localApi'
+import { exportData, importData } from './lib/backup'
 
 const API_KEY_STORAGE = 'kitchen_api_key'
 
@@ -16,9 +18,11 @@ interface StockItem {
   food_id: number
   food_name: string
   food_category: string
+  default_shelf_days: number | null
   quantity: number
   unit: string
   expiry_date: string | null
+  purchased_date: string | null
   opened: boolean
   location: string | null
 }
@@ -99,58 +103,13 @@ const MEAL_TYPE_LABELS: Record<string, string> = {
   snack: 'おやつ',
 }
 
-// ---- API helpers ----
-function makeApi(apiKey: string) {
-  const headers = { 'X-API-Key': apiKey, 'Content-Type': 'application/json' }
-
-  async function req<T>(url: string, init?: RequestInit): Promise<T> {
-    const r = await fetch(url, { ...init, headers: { ...headers, ...(init?.headers ?? {}) } })
-    if (!r.ok) throw new Error(await r.text())
-    return r.json()
-  }
-
-  return {
-    // Stock
-    getFoods: () => req<Food[]>('/api/v1/foods'),
-    createFood: (p: { name: string; category: string; default_shelf_days?: number }) =>
-      req<Food>('/api/v1/foods', { method: 'POST', body: JSON.stringify(p) }),
-    getStock: () => req<StockItem[]>('/api/v1/stock'),
-    createStock: (p: { food_id: number; quantity: number; unit: string; expiry_date?: string }) =>
-      req<StockItem>('/api/v1/stock', { method: 'POST', body: JSON.stringify(p) }),
-    consumeStock: (itemId: number, delta: number) =>
-      req<StockItem>(`/api/v1/stock/${itemId}/transactions`, {
-        method: 'POST',
-        body: JSON.stringify({ tx_type: 'consume', quantity_delta: -Math.abs(delta) }),
-      }),
-    deleteStock: (itemId: number) =>
-      fetch(`/api/v1/stock/${itemId}`, { method: 'DELETE', headers }).then(r => { if (!r.ok) throw new Error() }),
-
-    // Meal Plans
-    createMealPlan: (p: { start_date: string; days: number; meal_types: string[]; preferences?: string }) =>
-      req<MealPlan>('/api/v1/meal-plans', { method: 'POST', body: JSON.stringify(p) }),
-    getMealPlans: () => req<MealPlan[]>('/api/v1/meal-plans'),
-    getMealPlan: (id: number) => req<MealPlan>(`/api/v1/meal-plans/${id}`),
-    getShoppingList: (planId: number) => req<ShoppingList>(`/api/v1/meal-plans/${planId}/shopping-list`),
-
-    // Recipes
-    generateRecipe: (mealId: number) =>
-      req<Recipe>(`/api/v1/meals/${mealId}/recipe`, { method: 'POST' }),
-    getRecipe: (id: number) => req<Recipe>(`/api/v1/recipes/${id}`),
-    listRecipes: (q?: string, foodName?: string) => {
-      const params = new URLSearchParams()
-      if (q) params.set('q', q)
-      if (foodName) params.set('food_name', foodName)
-      return req<Recipe[]>(`/api/v1/recipes?${params}`)
-    },
-    suggestRecipes: (foodNames: string[], count = 1) =>
-      req<Recipe[]>('/api/v1/recipes/suggest', {
-        method: 'POST',
-        body: JSON.stringify({ food_names: foodNames, count }),
-      }),
-  }
+function getStep(unit: string): number {
+  if (['g', 'ml'].includes(unit)) return 100
+  if (['kg', 'L'].includes(unit)) return 0.1
+  return 1
 }
 
-type Api = ReturnType<typeof makeApi>
+type Api = ReturnType<typeof makeLocalApi>
 
 // ---- Styles ----
 const S = {
@@ -171,9 +130,107 @@ const S = {
 }
 
 // ---- Stock Components ----
-function AddFoodModal({ api, onClose, onCreated }: { api: Api; onClose: () => void; onCreated: (f: Food) => void }) {
+function EditFoodModal({ api, food, onClose, onUpdated }: { api: Api; food: Food; onClose: () => void; onUpdated: (f: Food) => void }) {
+  const [name, setName] = useState(food.name)
+  const [category, setCategory] = useState(food.category)
+  const [shelfDays, setShelfDays] = useState(food.default_shelf_days?.toString() ?? '')
+  const [error, setError] = useState('')
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    try {
+      const updated = await api.updateFood(food.id, {
+        name,
+        category,
+        default_shelf_days: shelfDays ? Number(shelfDays) : null,
+      })
+      onUpdated(updated)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '更新失敗')
+    }
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+      <div style={{ background: '#fff', borderRadius: 8, padding: 24, width: 320 }}>
+        <h3 style={{ margin: '0 0 16px' }}>食材マスター編集</h3>
+        <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div><div style={S.label}>食材名</div><input style={S.input} value={name} onChange={e => setName(e.target.value)} required /></div>
+          <div>
+            <div style={S.label}>カテゴリ</div>
+            <select style={S.input} value={category} onChange={e => setCategory(e.target.value)}>
+              {Object.entries(CATEGORY_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          </div>
+          <div><div style={S.label}>デフォルト保存日数（任意）</div><input style={S.input} type="number" min={1} value={shelfDays} onChange={e => setShelfDays(e.target.value)} /></div>
+          {error && <div style={{ color: 'red', fontSize: 12 }}>{error}</div>}
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button type="button" onClick={onClose} style={S.btn('#888')}>キャンセル</button>
+            <button type="submit" style={S.btn()}>保存</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function EditStockModal({ api, item, onClose, onUpdated }: { api: Api; item: StockItem; onClose: () => void; onUpdated: () => void }) {
+  const [quantity, setQuantity] = useState(item.quantity.toString())
+  const [unit, setUnit] = useState(item.unit)
+  const [expiry, setExpiry] = useState(item.expiry_date ?? '')
+  const [purchased, setPurchased] = useState(item.purchased_date ?? '')
+  const [category, setCategory] = useState(item.food_category ?? '')
+  const [error, setError] = useState('')
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    try {
+      await api.updateStock(item.id, {
+        quantity: Number(quantity),
+        unit,
+        expiry_date: expiry || null,
+        purchased_date: purchased || null,
+        category: category || null,
+      })
+      onUpdated()
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '更新失敗')
+    }
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+      <div style={{ background: '#fff', borderRadius: 8, padding: 24, width: 320 }}>
+        <h3 style={{ margin: '0 0 4px' }}>在庫編集</h3>
+        <div style={{ fontSize: 13, color: '#555', marginBottom: 16 }}>{item.food_name}</div>
+        <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ flex: 2 }}><div style={S.label}>数量</div><input style={S.input} type="number" min={0} step={0.01} value={quantity} onChange={e => setQuantity(e.target.value)} required /></div>
+            <div style={{ flex: 1 }}><div style={S.label}>単位</div><input style={S.input} value={unit} onChange={e => setUnit(e.target.value)} required /></div>
+          </div>
+          <div>
+            <div style={S.label}>保管場所</div>
+            <select style={S.input} value={category} onChange={e => setCategory(e.target.value)}>
+              <option value="">── デフォルト ──</option>
+              {Object.entries(CATEGORY_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          </div>
+          <div><div style={S.label}>購入日（任意）</div><input style={S.input} type="date" value={purchased} onChange={e => setPurchased(e.target.value)} /></div>
+          <div><div style={S.label}>消費期限（任意）</div><input style={S.input} type="date" value={expiry} onChange={e => setExpiry(e.target.value)} /></div>
+          {error && <div style={{ color: 'red', fontSize: 12 }}>{error}</div>}
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button type="button" onClick={onClose} style={S.btn('#888')}>キャンセル</button>
+            <button type="submit" style={S.btn()}>保存</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function AddFoodModal({ api, onClose, onCreated, defaultCategory = 'refrigerated' }: { api: Api; onClose: () => void; onCreated: (f: Food) => void; defaultCategory?: string }) {
   const [name, setName] = useState('')
-  const [category, setCategory] = useState('refrigerated')
+  const [category, setCategory] = useState(defaultCategory)
   const [shelfDays, setShelfDays] = useState('')
   const [error, setError] = useState('')
 
@@ -212,16 +269,33 @@ function AddFoodModal({ api, onClose, onCreated }: { api: Api; onClose: () => vo
 }
 
 function AddStockModal({ api, foods, onClose, onCreated }: { api: Api; foods: Food[]; onClose: () => void; onCreated: () => void }) {
-  const [foodId, setFoodId] = useState(foods[0]?.id?.toString() ?? '')
+  const today = new Date().toISOString().slice(0, 10)
+  const [foodName, setFoodName] = useState('')
+  const [category, setCategory] = useState('')
   const [quantity, setQuantity] = useState('')
   const [unit, setUnit] = useState('個')
+  const [purchased, setPurchased] = useState(today)
   const [expiry, setExpiry] = useState('')
   const [error, setError] = useState('')
 
+  const selectedFood = foods.find(f => f.name === foodName)
+
+  useEffect(() => {
+    if (selectedFood) setCategory(selectedFood.category)
+  }, [selectedFood])
+
   async function submit(e: React.FormEvent) {
     e.preventDefault()
+    if (!selectedFood) { setError('食材名を正確に入力してください'); return }
     try {
-      await api.createStock({ food_id: Number(foodId), quantity: Number(quantity), unit, ...(expiry ? { expiry_date: expiry } : {}) })
+      await api.createStock({
+        food_id: selectedFood.id,
+        quantity: Number(quantity),
+        unit,
+        ...(purchased ? { purchased_date: purchased } : {}),
+        ...(expiry ? { expiry_date: expiry } : {}),
+        ...(category ? { category } : {}),
+      })
       onCreated()
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : '登録失敗')
@@ -234,15 +308,31 @@ function AddStockModal({ api, foods, onClose, onCreated }: { api: Api; foods: Fo
         <h3 style={{ margin: '0 0 16px' }}>在庫追加</h3>
         <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div>
-            <div style={S.label}>食材</div>
-            <select style={S.input} value={foodId} onChange={e => setFoodId(e.target.value)} required>
-              {foods.map(f => <option key={f.id} value={f.id}>{f.name}（{CATEGORY_LABELS[f.category]}）</option>)}
+            <div style={S.label}>食材（入力で絞り込み）</div>
+            <input
+              style={S.input}
+              list="food-datalist-add"
+              value={foodName}
+              onChange={e => setFoodName(e.target.value)}
+              placeholder="例: 豚バラ肉"
+              required
+            />
+            <datalist id="food-datalist-add">
+              {foods.map(f => <option key={f.id} value={f.name} />)}
+            </datalist>
+          </div>
+          <div>
+            <div style={S.label}>保管場所（食材デフォルトを上書き可）</div>
+            <select style={S.input} value={category} onChange={e => setCategory(e.target.value)}>
+              <option value="">── デフォルト ──</option>
+              {Object.entries(CATEGORY_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <div style={{ flex: 2 }}><div style={S.label}>数量</div><input style={S.input} type="number" min={0.01} step={0.01} value={quantity} onChange={e => setQuantity(e.target.value)} required /></div>
             <div style={{ flex: 1 }}><div style={S.label}>単位</div><input style={S.input} value={unit} onChange={e => setUnit(e.target.value)} required /></div>
           </div>
+          <div><div style={S.label}>購入日（任意）</div><input style={S.input} type="date" value={purchased} onChange={e => setPurchased(e.target.value)} /></div>
           <div><div style={S.label}>消費期限（任意）</div><input style={S.input} type="date" value={expiry} onChange={e => setExpiry(e.target.value)} /></div>
           {error && <div style={{ color: 'red', fontSize: 12 }}>{error}</div>}
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
@@ -255,10 +345,187 @@ function AddStockModal({ api, foods, onClose, onCreated }: { api: Api; foods: Fo
   )
 }
 
+// ---- Stock Card（3レベル操作）----
+function StockCard({ item, api, onUpdated, onEdit, onDelete }: {
+  item: StockItem; api: Api
+  onUpdated: (item: StockItem) => void
+  onEdit: (item: StockItem) => void
+  onDelete: (item: StockItem) => void
+}) {
+  const [adjusting, setAdjusting] = useState(false)
+  const [editingQty, setEditingQty] = useState<string | null>(null)
+  const [error, setError] = useState('')
+  const step = getStep(item.unit)
+  const today = new Date().toISOString().slice(0, 10)
+
+  const deadline = (() => {
+    if (item.expiry_date) return item.expiry_date
+    if (item.purchased_date && item.default_shelf_days) {
+      const d = new Date(item.purchased_date + 'T00:00:00')
+      d.setDate(d.getDate() + item.default_shelf_days)
+      return d.toISOString().slice(0, 10)
+    }
+    return null
+  })()
+  const daysLeft = deadline
+    ? Math.ceil((new Date(deadline + 'T00:00:00').getTime() - new Date(today + 'T00:00:00').getTime()) / 86400000)
+    : null
+  const isExpired = daysLeft !== null && daysLeft < 0
+  const isWarn = daysLeft !== null && daysLeft >= 0 && daysLeft <= 3
+
+  async function adjust(delta: number) {
+    const newQty = Math.round((item.quantity + delta) * 1000) / 1000
+    if (newQty < 0) return
+    setAdjusting(true); setError('')
+    try {
+      const updated = await api.updateStock(item.id, { quantity: newQty })
+      onUpdated(updated)
+    } catch (e: unknown) { setError(e instanceof Error ? e.message : 'エラー') }
+    finally { setAdjusting(false) }
+  }
+
+  async function commitInlineEdit() {
+    if (editingQty === null) return
+    const newQty = parseFloat(editingQty)
+    if (isNaN(newQty) || newQty < 0) { setEditingQty(null); return }
+    if (newQty === item.quantity) { setEditingQty(null); return }
+    try {
+      const updated = await api.updateStock(item.id, { quantity: newQty })
+      onUpdated(updated)
+    } catch (e: unknown) { setError(e instanceof Error ? e.message : 'エラー') }
+    finally { setEditingQty(null) }
+  }
+
+  const circleBtn = (color: string) => ({
+    ...S.btn(color), width: 36, height: 36, fontSize: 20, padding: 0, borderRadius: 18,
+    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  } as React.CSSProperties)
+
+  return (
+    <div style={{ ...S.card, opacity: isExpired ? 0.6 : 1, marginBottom: 8 }}>
+      {/* 上段: 食材名・バッジ・期限 */}
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
+        <span style={{ fontWeight: 600 }}>{item.food_name}</span>
+        <span style={S.badge(item.food_category)}>{CATEGORY_LABELS[item.food_category] ?? item.food_category}</span>
+        {daysLeft !== null && (
+          <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 600, color: isExpired ? '#e53935' : isWarn ? '#fb8c00' : '#888' }}>
+            {isExpired ? `期限切れ(${Math.abs(daysLeft)}日前)` : daysLeft === 0 ? '今日まで' : `あと${daysLeft}日`}
+          </span>
+        )}
+      </div>
+      {/* 下段: L1 −/＋ ＋ L2 数量 ＋ L3 編集 */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <button style={circleBtn('#90a4ae')} onClick={() => adjust(-step)} disabled={adjusting || item.quantity < step}>−</button>
+        {editingQty !== null ? (
+          <input
+            type="number" min={0} step={step} value={editingQty} autoFocus
+            onChange={e => setEditingQty(e.target.value)}
+            onBlur={commitInlineEdit}
+            onKeyDown={e => {
+              if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+              if (e.key === 'Escape') setEditingQty(null)
+            }}
+            style={{ ...S.input, width: 90, textAlign: 'center', padding: '5px 8px' }}
+          />
+        ) : (
+          <button
+            onClick={() => setEditingQty(String(item.quantity))}
+            title="タップして数量を編集"
+            style={{ background: '#f5f5f5', border: '1px solid #ddd', borderRadius: 4, padding: '5px 10px', fontSize: 14, cursor: 'text', minWidth: 90, textAlign: 'center' }}
+          >{item.quantity} {item.unit}</button>
+        )}
+        <button style={circleBtn('#90a4ae')} onClick={() => adjust(step)} disabled={adjusting}>＋</button>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+          <button style={{ ...S.btn('#1565c0'), fontSize: 12, padding: '5px 10px' }} onClick={() => onEdit(item)}>編集…</button>
+          <button style={{ ...S.btn('#e53935'), fontSize: 12, padding: '5px 10px' }} onClick={() => onDelete(item)}>削除</button>
+        </div>
+      </div>
+      {error && <div style={{ color: 'red', fontSize: 11, marginTop: 4 }}>{error}</div>}
+    </div>
+  )
+}
+
+// ---- Seasoning Components ----
+function SeasoningRow({ food, stockItem, api, onToggled }: {
+  food: Food; stockItem: StockItem | undefined; api: Api; onToggled: () => void
+}) {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const hasStock = !!stockItem
+
+  async function toggle() {
+    setLoading(true); setError('')
+    try {
+      if (hasStock) { await api.deleteStock(stockItem!.id) }
+      else { await api.createStock({ food_id: food.id, quantity: 1, unit: '本' }) }
+      onToggled()
+    } catch (e: unknown) { setError(e instanceof Error ? e.message : 'エラー') }
+    finally { setLoading(false) }
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', padding: '11px 16px', borderBottom: '1px solid #f0f0f0' }}>
+        <input
+          type="checkbox" checked={hasStock} onChange={toggle} disabled={loading}
+          style={{ width: 18, height: 18, marginRight: 12, cursor: 'pointer', accentColor: '#1976d2' }}
+        />
+        <span style={{ fontSize: 14, color: hasStock ? '#333' : '#aaa' }}>{food.name}</span>
+      </div>
+      {error && <div style={{ color: '#e53935', fontSize: 11, padding: '2px 16px 4px' }}>{error}</div>}
+    </div>
+  )
+}
+
+function SeasoningTab({ api, foods, stock, onReload }: {
+  api: Api; foods: Food[]; stock: StockItem[]; onReload: () => void
+}) {
+  const [addModal, setAddModal] = useState(false)
+  const seasoningFoods = foods
+    .filter(f => f.category === 'seasoning')
+    .sort((a, b) => a.name.localeCompare(b.name, 'ja'))
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+        <button style={S.btn('#555')} onClick={() => setAddModal(true)}>+ 調味料登録</button>
+      </div>
+      {seasoningFoods.length === 0 ? (
+        <div style={{ textAlign: 'center', color: '#aaa', padding: 40 }}>調味料が登録されていません</div>
+      ) : (
+        <div style={{ border: '1px solid #e0e0e0', borderRadius: 8, overflow: 'hidden', background: '#fff' }}>
+          {seasoningFoods.map(food => (
+            <SeasoningRow
+              key={food.id} food={food}
+              stockItem={stock.find(s => s.food_id === food.id)}
+              api={api} onToggled={onReload}
+            />
+          ))}
+        </div>
+      )}
+      {addModal && (
+        <AddFoodModal
+          api={api} defaultCategory="seasoning"
+          onClose={() => setAddModal(false)}
+          onCreated={() => { onReload(); setAddModal(false) }}
+        />
+      )}
+    </div>
+  )
+}
+
+// ---- Stock Page ----
 function StockPage({ api }: { api: Api }) {
   const [stock, setStock] = useState<StockItem[]>([])
   const [foods, setFoods] = useState<Food[]>([])
+  const [activeTab, setActiveTab] = useState<'food' | 'seasoning'>('food')
   const [modal, setModal] = useState<'food' | 'stock' | null>(null)
+  const [editFood, setEditFood] = useState<Food | null>(null)
+  const [editStock, setEditStock] = useState<StockItem | null>(null)
+  const [showFoods, setShowFoods] = useState(false)
+  const [foodError, setFoodError] = useState<Record<number, string>>({})
+  const [filterCat, setFilterCat] = useState<string | null>(null)
+  const [sortBy, setSortBy] = useState<'expiry' | 'name'>('expiry')
   const [error, setError] = useState('')
 
   const reload = useCallback(async () => {
@@ -270,78 +537,164 @@ function StockPage({ api }: { api: Api }) {
 
   useEffect(() => { reload() }, [reload])
 
-  async function consume(item: StockItem) {
-    const input = prompt(`消費数量を入力 (現在: ${item.quantity} ${item.unit})`)
-    if (!input) return
-    const delta = parseFloat(input)
-    if (isNaN(delta) || delta <= 0) return
-    try { await api.consumeStock(item.id, delta); reload() }
-    catch (e: unknown) { alert(e instanceof Error ? e.message : 'エラー') }
+  const foodStock = stock.filter(s => s.food_category !== 'seasoning')
+  const nonSeasoningFoods = foods.filter(f => f.category !== 'seasoning')
+
+  const warnDate = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10)
+  const expiringSoon = foodStock.filter(s => {
+    const dl = s.expiry_date ?? (s.purchased_date && s.default_shelf_days
+      ? (() => { const d = new Date(s.purchased_date + 'T00:00:00'); d.setDate(d.getDate() + s.default_shelf_days!); return d.toISOString().slice(0, 10) })()
+      : null)
+    return dl && dl <= warnDate
+  })
+
+  async function removeFood(food: Food) {
+    if (!confirm(`「${food.name}」を食材マスターから削除しますか？`)) return
+    try {
+      await api.deleteFood(food.id)
+      setFoods(prev => prev.filter(f => f.id !== food.id))
+      setFoodError(prev => { const n = { ...prev }; delete n[food.id]; return n })
+    } catch (e: unknown) {
+      setFoodError(prev => ({ ...prev, [food.id]: e instanceof Error ? e.message : '削除失敗' }))
+    }
   }
 
-  async function remove(item: StockItem) {
+  async function removeStock(item: StockItem) {
     if (!confirm(`「${item.food_name}」を在庫から削除しますか？`)) return
     await api.deleteStock(item.id); reload()
   }
 
-  const today = new Date().toISOString().slice(0, 10)
-  const warnDate = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10)
-  const expiringSoon = stock.filter(s => s.expiry_date && s.expiry_date <= warnDate)
+  const tabStyle = (tab: 'food' | 'seasoning') => ({
+    flex: 1, padding: '8px 0', fontSize: 14, fontWeight: activeTab === tab ? 600 : 400,
+    background: 'none', border: 'none', borderBottom: `2px solid ${activeTab === tab ? '#1976d2' : 'transparent'}`,
+    color: activeTab === tab ? '#1976d2' : '#888', cursor: 'pointer',
+  } as React.CSSProperties)
+
+  const usedCats = [...new Set(foodStock.map(s => s.food_category))]
+  const filtered = foodStock
+    .filter(s => !filterCat || s.food_category === filterCat)
+    .sort((a, b) => {
+      if (sortBy === 'name') return a.food_name.localeCompare(b.food_name, 'ja')
+      if (!a.expiry_date && !b.expiry_date) return 0
+      if (!a.expiry_date) return 1; if (!b.expiry_date) return -1
+      return a.expiry_date.localeCompare(b.expiry_date)
+    })
 
   return (
     <div style={{ maxWidth: 600, margin: '0 auto', padding: '16px 12px', fontFamily: 'sans-serif' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
         <h2 style={{ margin: 0, fontSize: 20 }}>在庫管理</h2>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button style={S.btn('#555')} onClick={() => setModal('food')}>+ 食材登録</button>
-          <button style={S.btn()} onClick={() => setModal('stock')} disabled={foods.length === 0}>+ 在庫追加</button>
-        </div>
-      </div>
-      {error && <div style={{ color: 'red', marginBottom: 8 }}>{error}</div>}
-      {expiringSoon.length > 0 && (
-        <div style={{ background: '#fff3e0', border: '1px solid #ffcc80', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 13 }}>
-          ⚠ 期限切れ間近: {expiringSoon.map(s => s.food_name).join('、')}
-        </div>
-      )}
-      {stock.length === 0 ? (
-        <div style={{ textAlign: 'center', color: '#aaa', padding: 40 }}>在庫がありません</div>
-      ) : (
-        stock.map(item => (
-          <div key={item.id} style={{ ...S.card, opacity: item.expiry_date && item.expiry_date < today ? 0.6 : 1 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div>
-                <span style={{ fontWeight: 600 }}>{item.food_name}</span>
-                <span style={S.badge(item.food_category)}>{CATEGORY_LABELS[item.food_category] ?? item.food_category}</span>
-                {item.opened && <span style={{ ...S.badge('seasoning'), marginLeft: 4 }}>開封済</span>}
-              </div>
-              <div style={{ display: 'flex', gap: 6 }}>
-                <button style={S.btn('#43a047')} onClick={() => consume(item)}>消費</button>
-                <button style={S.btn('#e53935')} onClick={() => remove(item)}>削除</button>
-              </div>
-            </div>
-            <div style={{ marginTop: 4, fontSize: 13, color: '#555' }}>
-              {item.quantity} {item.unit}
-              {item.expiry_date && (
-                <span style={{ marginLeft: 12, color: item.expiry_date < today ? '#e53935' : item.expiry_date <= warnDate ? '#fb8c00' : '#888' }}>
-                  期限: {item.expiry_date}
-                </span>
-              )}
-              {item.location && <span style={{ marginLeft: 12, color: '#888' }}>{item.location}</span>}
-            </div>
+        {activeTab === 'food' && (
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button style={S.btn('#555')} onClick={() => setModal('food')}>+ 食材登録</button>
+            <button style={S.btn('#78909c')} onClick={() => setShowFoods(v => !v)}>食材一覧{showFoods ? ' ▲' : ' ▼'}</button>
+            <button style={S.btn()} onClick={() => setModal('stock')} disabled={nonSeasoningFoods.length === 0}>+ 在庫追加</button>
           </div>
-        ))
+        )}
+      </div>
+
+      {/* タブ */}
+      <div style={{ display: 'flex', borderBottom: '1px solid #e0e0e0', marginBottom: 16 }}>
+        <button style={tabStyle('food')} onClick={() => setActiveTab('food')}>食材</button>
+        <button style={tabStyle('seasoning')} onClick={() => setActiveTab('seasoning')}>調味料</button>
+      </div>
+
+      {error && <div style={{ color: 'red', marginBottom: 8 }}>{error}</div>}
+
+      {/* 食材タブ */}
+      {activeTab === 'food' && (
+        <>
+          {showFoods && (
+            <div style={{ border: '1px solid #e0e0e0', borderRadius: 8, padding: '8px 12px', marginBottom: 16, background: '#fafafa' }}>
+              <div style={{ fontWeight: 600, fontSize: 13, color: '#555', marginBottom: 8 }}>食材マスター（{nonSeasoningFoods.length}件）</div>
+              {nonSeasoningFoods.length === 0 ? (
+                <div style={{ color: '#aaa', fontSize: 13 }}>食材が登録されていません</div>
+              ) : nonSeasoningFoods.map(food => (
+                <div key={food.id}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid #f0f0f0' }}>
+                    <div>
+                      <span style={{ fontSize: 13 }}>{food.name}</span>
+                      <span style={S.badge(food.category)}>{CATEGORY_LABELS[food.category] ?? food.category}</span>
+                      {food.default_shelf_days && <span style={{ fontSize: 11, color: '#888', marginLeft: 8 }}>{food.default_shelf_days}日</span>}
+                    </div>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      <button style={{ ...S.btn('#1976d2'), fontSize: 11, padding: '3px 8px' }} onClick={() => setEditFood(food)}>編集</button>
+                      <button style={{ ...S.btn('#e53935'), fontSize: 11, padding: '3px 8px' }} onClick={() => removeFood(food)}>削除</button>
+                    </div>
+                  </div>
+                  {foodError[food.id] && <div style={{ color: '#e53935', fontSize: 11, padding: '2px 0 4px' }}>{foodError[food.id]}</div>}
+                </div>
+              ))}
+            </div>
+          )}
+          {expiringSoon.length > 0 && (
+            <div style={{ background: '#fff3e0', border: '1px solid #ffcc80', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 13 }}>
+              ⚠ 期限切れ間近: {expiringSoon.map(s => s.food_name).join('、')}
+            </div>
+          )}
+          {foodStock.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+              <button onClick={() => setFilterCat(null)} style={{ padding: '4px 10px', borderRadius: 12, fontSize: 12, border: 'none', cursor: 'pointer', background: filterCat === null ? '#1976d2' : '#f0f0f0', color: filterCat === null ? '#fff' : '#555' }}>すべて</button>
+              {Object.entries(CATEGORY_LABELS)
+                .filter(([v]) => v !== 'seasoning' && usedCats.includes(v))
+                .map(([v, l]) => (
+                  <button key={v} onClick={() => setFilterCat(v === filterCat ? null : v)}
+                    style={{ padding: '4px 10px', borderRadius: 12, fontSize: 12, border: 'none', cursor: 'pointer', background: filterCat === v ? '#1976d2' : '#f0f0f0', color: filterCat === v ? '#fff' : '#555' }}
+                  >{l}</button>
+                ))
+              }
+              <button onClick={() => setSortBy(s => s === 'expiry' ? 'name' : 'expiry')}
+                style={{ marginLeft: 'auto', padding: '4px 10px', borderRadius: 12, fontSize: 12, border: '1px solid #ccc', cursor: 'pointer', background: '#fff', color: '#555' }}
+              >{sortBy === 'expiry' ? '期限順' : '名前順'}</button>
+            </div>
+          )}
+          {filtered.length === 0 ? (
+            <div style={{ textAlign: 'center', color: '#aaa', padding: 40 }}>
+              {filterCat ? `「${CATEGORY_LABELS[filterCat]}」の在庫がありません` : '在庫がありません'}
+            </div>
+          ) : filtered.map(item => (
+            <StockCard
+              key={item.id} item={item} api={api}
+              onUpdated={updated => setStock(prev => prev.map(s => s.id === updated.id ? updated : s))}
+              onEdit={setEditStock}
+              onDelete={removeStock}
+            />
+          ))}
+        </>
       )}
-      {modal === 'food' && <AddFoodModal api={api} onClose={() => setModal(null)} onCreated={() => { reload(); setModal(null) }} />}
-      {modal === 'stock' && <AddStockModal api={api} foods={foods} onClose={() => setModal(null)} onCreated={() => { reload(); setModal(null) }} />}
+
+      {/* 調味料タブ */}
+      {activeTab === 'seasoning' && (
+        <SeasoningTab api={api} foods={foods} stock={stock} onReload={reload} />
+      )}
+
+      {modal === 'food' && <AddFoodModal api={api} onClose={() => setModal(null)} onCreated={f => { setFoods(prev => [...prev, f]); setModal(null) }} />}
+      {modal === 'stock' && <AddStockModal api={api} foods={nonSeasoningFoods} onClose={() => setModal(null)} onCreated={() => { reload(); setModal(null) }} />}
+      {editFood && (
+        <EditFoodModal api={api} food={editFood} onClose={() => setEditFood(null)} onUpdated={f => { setFoods(prev => prev.map(x => x.id === f.id ? f : x)); setEditFood(null) }} />
+      )}
+      {editStock && (
+        <EditStockModal api={api} item={editStock} onClose={() => setEditStock(null)} onUpdated={() => { reload(); setEditStock(null) }} />
+      )}
     </div>
   )
 }
 
 // ---- Recipe Modal ----
+function inlineRender(text: string): React.ReactNode[] {
+  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g)
+  return parts.map((part, i) => {
+    if (/^\*\*(.+)\*\*$/.test(part)) return <strong key={i}>{part.slice(2, -2)}</strong>
+    if (/^\*(.+)\*$/.test(part)) return <em key={i}>{part.slice(1, -1)}</em>
+    if (/^`(.+)`$/.test(part)) return <code key={i} style={{ background: '#f5f5f5', padding: '1px 4px', borderRadius: 3, fontSize: 12, fontFamily: 'monospace' }}>{part.slice(1, -1)}</code>
+    return part
+  })
+}
+
 function SimpleMarkdown({ text }: { text: string }) {
   const lines = text.split('\n')
   const elements: React.ReactNode[] = []
-  let listBuf: string[] = []
+  let listBuf: React.ReactNode[][] = []
   let listType: 'ul' | 'ol' | null = null
 
   function flushList() {
@@ -349,27 +702,34 @@ function SimpleMarkdown({ text }: { text: string }) {
     const Tag = listType!
     elements.push(
       <Tag key={elements.length} style={{ margin: '4px 0 4px 20px', padding: 0 }}>
-        {listBuf.map((t, i) => <li key={i} style={{ marginBottom: 2 }}>{t}</li>)}
+        {listBuf.map((nodes, i) => <li key={i} style={{ marginBottom: 2 }}>{nodes}</li>)}
       </Tag>
     )
     listBuf = []; listType = null
   }
 
   for (const line of lines) {
-    if (/^#{1,3}\s/.test(line)) {
+    const hMatch = line.match(/^(#{1,3})\s(.+)/)
+    if (hMatch) {
       flushList()
-      elements.push(<h4 key={elements.length} style={{ margin: '10px 0 4px', fontSize: 14 }}>{line.replace(/^#+\s/, '')}</h4>)
+      const level = hMatch[1].length
+      const headingStyle: React.CSSProperties = level === 1
+        ? { margin: '12px 0 4px', fontSize: 15, fontWeight: 700, borderBottom: '1px solid #eee', paddingBottom: 2 }
+        : level === 2
+        ? { margin: '10px 0 4px', fontSize: 14, fontWeight: 600 }
+        : { margin: '8px 0 2px', fontSize: 13, fontWeight: 600, color: '#555' }
+      elements.push(<div key={elements.length} style={headingStyle}>{hMatch[2]}</div>)
     } else if (/^\d+\.\s/.test(line)) {
       if (listType === 'ul') flushList()
       listType = 'ol'
-      listBuf.push(line.replace(/^\d+\.\s/, ''))
+      listBuf.push(inlineRender(line.replace(/^\d+\.\s/, '')))
     } else if (/^[-*]\s/.test(line)) {
       if (listType === 'ol') flushList()
       listType = 'ul'
-      listBuf.push(line.replace(/^[-*]\s/, ''))
+      listBuf.push(inlineRender(line.replace(/^[-*]\s/, '')))
     } else {
       flushList()
-      if (line.trim()) elements.push(<p key={elements.length} style={{ margin: '4px 0', fontSize: 13 }}>{line}</p>)
+      if (line.trim()) elements.push(<p key={elements.length} style={{ margin: '4px 0', fontSize: 13 }}>{inlineRender(line)}</p>)
     }
   }
   flushList()
@@ -479,11 +839,34 @@ function CreatePlanForm({ api, onCreated }: { api: Api; onCreated: (p: MealPlan)
   )
 }
 
-function MealCard({ meal, api }: { meal: Meal; api: Api }) {
+const STATUS_COLORS: Record<string, string> = { planned: '#e0e0e0', cooked: '#4caf50', skipped: '#9e9e9e' }
+
+function MealCard({ meal, api, onDelete }: { meal: Meal; api: Api; onDelete: () => void }) {
   const [loadedRecipe, setLoadedRecipe] = useState<Recipe | null>(null)
   const [showModal, setShowModal] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [currentStatus, setCurrentStatus] = useState(meal.status)
+
+  async function toggleStatus(next: 'cooked' | 'skipped') {
+    const newStatus = currentStatus === next ? 'planned' : next
+    try {
+      await api.updateMealStatus(meal.id, newStatus)
+      setCurrentStatus(newStatus)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '更新失敗')
+    }
+  }
+
+  async function handleDelete() {
+    if (!confirm(`「${meal.concept ?? '未設定'}」を削除しますか？`)) return
+    try {
+      await api.deleteMeal(meal.id)
+      onDelete()
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '削除失敗')
+    }
+  }
 
   // B-01: meal.recipe_id が真のステート。ローカルの recipe 状態に依存しない
   async function openRecipe() {
@@ -510,11 +893,21 @@ function MealCard({ meal, api }: { meal: Meal; api: Api }) {
 
   return (
     <>
-      <div style={{ background: '#fafafa', border: '1px solid #e8e8e8', borderRadius: 6, padding: '8px 12px', marginBottom: 6 }}>
+      <div style={{
+        background: '#fafafa',
+        border: `1px solid ${currentStatus === 'cooked' ? '#a5d6a7' : currentStatus === 'skipped' ? '#e0e0e0' : '#e8e8e8'}`,
+        borderRadius: 6, padding: '8px 12px', marginBottom: 6,
+        opacity: currentStatus === 'skipped' ? 0.7 : 1,
+      }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 12, color: '#888', marginBottom: 2 }}>{MEAL_TYPE_LABELS[meal.meal_type] ?? meal.meal_type}</div>
-            <div style={{ fontWeight: 600, fontSize: 14 }}>{meal.concept ?? '（未設定）'}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontWeight: 600, fontSize: 14 }}>{meal.concept ?? '（未設定）'}</span>
+              {meal.recipe_id && (
+                <span style={{ background: '#e8f5e9', color: '#2e7d32', borderRadius: 10, padding: '1px 7px', fontSize: 11 }}>レシピ済</span>
+              )}
+            </div>
             {meal.estimated_ingredients && meal.estimated_ingredients.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
                 {meal.estimated_ingredients.map((ing, i) => (
@@ -526,17 +919,31 @@ function MealCard({ meal, api }: { meal: Meal; api: Api }) {
               <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>⏱ 約{meal.cook_time_min_estimate}分</div>
             )}
             {error && <div style={{ color: 'red', fontSize: 11, marginTop: 4 }}>{error}</div>}
+            <div style={{ display: 'flex', gap: 5, marginTop: 7, alignItems: 'center' }}>
+              <span style={{ fontSize: 10, color: '#aaa' }}>実施:</span>
+              <button
+                style={{ padding: '2px 8px', borderRadius: 10, fontSize: 11, border: 'none', cursor: 'pointer', background: currentStatus === 'cooked' ? STATUS_COLORS.cooked : '#f0f0f0', color: currentStatus === 'cooked' ? '#fff' : '#666' }}
+                onClick={() => toggleStatus('cooked')} disabled={loading}
+              >{currentStatus === 'cooked' ? '✓ 作った' : '作った'}</button>
+              <button
+                style={{ padding: '2px 8px', borderRadius: 10, fontSize: 11, border: 'none', cursor: 'pointer', background: currentStatus === 'skipped' ? STATUS_COLORS.skipped : '#f0f0f0', color: currentStatus === 'skipped' ? '#fff' : '#666' }}
+                onClick={() => toggleStatus('skipped')} disabled={loading}
+              >{currentStatus === 'skipped' ? '✓ スキップ' : 'スキップ'}</button>
+            </div>
           </div>
-          <div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end' }}>
             {meal.recipe_id ? (
               <button style={{ ...S.btn('#1565c0'), fontSize: 12, padding: '5px 10px' }} onClick={openRecipe} disabled={loading}>
-                {loading ? '読み込み中…' : 'レシピ詳細'}
+                {loading ? '読み込み中…' : 'レシピを見る'}
               </button>
             ) : (
               <button style={{ ...S.btn('#388e3c'), fontSize: 12, padding: '5px 10px' }} onClick={generate} disabled={loading}>
-                {loading ? '生成中…' : 'レシピ生成'}
+                {loading ? '生成中…' : 'レシピを生成する'}
               </button>
             )}
+            <button style={{ ...S.btn('#e53935'), fontSize: 11, padding: '3px 8px' }} onClick={handleDelete} disabled={loading}>
+              削除
+            </button>
           </div>
         </div>
       </div>
@@ -562,6 +969,26 @@ function MealPlanPage({ api }: { api: Api }) {
   useEffect(() => { reload() }, [reload])
 
   const selected = plans.find(p => p.id === selectedId)
+
+  async function handleDeletePlan(planId: number) {
+    const plan = plans.find(p => p.id === planId)
+    if (!plan) return
+    if (!confirm(`プラン「${plan.start_date} 〜 ${plan.end_date}」を削除しますか？\n配下の全献立も削除されます。`)) return
+    try {
+      await api.deleteMealPlan(planId)
+      const next = plans.filter(p => p.id !== planId)
+      setPlans(next)
+      setSelectedId(next.length > 0 ? next[0].id : null)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : '削除失敗')
+    }
+  }
+
+  function handleMealDeleted(planId: number, mealId: number) {
+    setPlans(prev => prev.map(p =>
+      p.id === planId ? { ...p, meals: p.meals.filter(m => m.id !== mealId) } : p
+    ))
+  }
 
   function groupByDate(meals: Meal[]): Record<string, Meal[]> {
     const map: Record<string, Meal[]> = {}
@@ -597,17 +1024,27 @@ function MealPlanPage({ api }: { api: Api }) {
         <>
           <div style={{ marginBottom: 12 }}>
             <div style={S.label}>プランを選択</div>
-            <select
-              style={S.input}
-              value={selectedId ?? ''}
-              onChange={e => setSelectedId(Number(e.target.value))}
-            >
-              {plans.map(p => (
-                <option key={p.id} value={p.id}>
-                  {p.start_date} 〜 {p.end_date}（{p.meals.length}食）
-                </option>
-              ))}
-            </select>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <select
+                style={{ ...S.input, flex: 1 }}
+                value={selectedId ?? ''}
+                onChange={e => setSelectedId(Number(e.target.value))}
+              >
+                {plans.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.start_date} 〜 {p.end_date}（{p.meals.length}食）
+                  </option>
+                ))}
+              </select>
+              {selectedId !== null && (
+                <button
+                  style={{ ...S.btn('#e53935'), whiteSpace: 'nowrap', fontSize: 13 }}
+                  onClick={() => handleDeletePlan(selectedId)}
+                >
+                  プラン削除
+                </button>
+              )}
+            </div>
           </div>
           {selected && (() => {
             const byDate = groupByDate(selected.meals)
@@ -620,7 +1057,7 @@ function MealPlanPage({ api }: { api: Api }) {
                       {date}（{['日', '月', '火', '水', '木', '金', '土'][new Date(date + 'T00:00:00').getDay()]}）
                     </div>
                     {byDate[date].map(meal => (
-                      <MealCard key={meal.id} meal={meal} api={api} />
+                      <MealCard key={meal.id} meal={meal} api={api} onDelete={() => handleMealDeleted(selected.id, meal.id)} />
                     ))}
                   </div>
                 ))}
@@ -723,14 +1160,197 @@ function ShoppingPage({ api }: { api: Api }) {
   )
 }
 
+// ---- Profile Page ----
+function ProfilePage({ api }: { api: Api }) {
+  const [family, setFamily] = useState('')
+  const [prefs, setPrefs] = useState('')
+  const [allergies, setAllergies] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [savedAt, setSavedAt] = useState<string | null>(null)
+  const [error, setError] = useState('')
+
+  const [exporting, setExporting] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [backupMsg, setBackupMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    api.getProfile()
+      .then(p => {
+        setFamily(p.family_composition ?? '')
+        setPrefs(p.food_preferences ?? '')
+        setAllergies(p.allergies ?? '')
+        setSavedAt(p.updated_at)
+      })
+      .catch(e => setError(e instanceof Error ? e.message : '読み込み失敗'))
+      .finally(() => setLoading(false))
+  }, [api])
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    setSaving(true); setError('')
+    try {
+      const p = await api.updateProfile({
+        family_composition: family || null,
+        food_preferences: prefs || null,
+        allergies: allergies || null,
+      })
+      setSavedAt(p.updated_at)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '保存失敗')
+    } finally { setSaving(false) }
+  }
+
+  async function handleExport() {
+    setExporting(true); setBackupMsg(null)
+    try {
+      await exportData()
+      setBackupMsg({ type: 'ok', text: 'エクスポート完了。ダウンロードフォルダを確認してください。' })
+    } catch (e: unknown) {
+      setBackupMsg({ type: 'err', text: e instanceof Error ? e.message : 'エクスポート失敗' })
+    } finally { setExporting(false) }
+  }
+
+  async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!confirm('現在のデータをすべて上書きして復元しますか？この操作は元に戻せません。')) {
+      e.target.value = ''
+      return
+    }
+    setImporting(true); setBackupMsg(null)
+    try {
+      const result = await importData(file)
+      setBackupMsg({
+        type: 'ok',
+        text: `インポート完了 — 食材: ${result.foods}件、在庫: ${result.stockItems}件、レシピ: ${result.recipes}件、献立: ${result.mealPlans}件`,
+      })
+    } catch (e: unknown) {
+      setBackupMsg({ type: 'err', text: e instanceof Error ? e.message : 'インポート失敗' })
+    } finally {
+      setImporting(false)
+      e.target.value = ''
+    }
+  }
+
+  if (loading) return <div style={{ textAlign: 'center', padding: 40, color: '#888' }}>読み込み中…</div>
+
+  return (
+    <div style={{ maxWidth: 600, margin: '0 auto', padding: '16px 12px', fontFamily: 'sans-serif' }}>
+      <h2 style={{ margin: '0 0 4px', fontSize: 20 }}>プロファイル設定</h2>
+      <p style={{ margin: '0 0 20px', fontSize: 12, color: '#888' }}>
+        献立生成時に自動で反映されます。毎回の「要望」欄は一時的な追加要望のみに使えます。
+      </p>
+      {error && <div style={{ color: 'red', marginBottom: 12, fontSize: 13 }}>{error}</div>}
+      <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+        <div>
+          <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>家族構成</div>
+          <div style={{ fontSize: 11, color: '#888', marginBottom: 6 }}>例: 大人2名（夫婦）、子供なし</div>
+          <input
+            style={S.input}
+            value={family}
+            onChange={e => setFamily(e.target.value)}
+            placeholder="大人2名（30代夫婦）"
+            maxLength={200}
+          />
+        </div>
+        <div>
+          <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>食事傾向・嗜好</div>
+          <div style={{ fontSize: 11, color: '#888', marginBottom: 6 }}>例: 朝は簡単に、夜は和食多め、週2回魚を食べたい</div>
+          <textarea
+            style={{ ...S.input, height: 80, resize: 'vertical' as const }}
+            value={prefs}
+            onChange={e => setPrefs(e.target.value)}
+            placeholder="朝は簡単に済ませたい。夜は和食を多めに。調理時間は30分以内が好ましい。"
+            maxLength={500}
+          />
+        </div>
+        <div>
+          <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>アレルギー・禁忌食材</div>
+          <div style={{ fontSize: 11, color: '#888', marginBottom: 6 }}>例: えび・かにアレルギー、パクチー嫌い</div>
+          <input
+            style={S.input}
+            value={allergies}
+            onChange={e => setAllergies(e.target.value)}
+            placeholder="なし"
+            maxLength={200}
+          />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button type="submit" style={S.btn()} disabled={saving}>
+            {saving ? '保存中…' : '保存する'}
+          </button>
+          {savedAt && <span style={{ fontSize: 12, color: '#888' }}>最終更新: {savedAt.slice(0, 16)}</span>}
+        </div>
+      </form>
+
+      {/* バックアップ */}
+      <div style={{ marginTop: 32, borderTop: '1px solid #eee', paddingTop: 24 }}>
+        <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 4 }}>データのバックアップ</div>
+        <p style={{ fontSize: 12, color: '#888', margin: '0 0 16px' }}>
+          データはこの端末内にのみ保存されています。機種変更や Safari のデータ消去に備えて定期的にバックアップを取ってください。
+        </p>
+        {backupMsg && (
+          <div style={{
+            background: backupMsg.type === 'ok' ? '#e8f5e9' : '#ffebee',
+            border: `1px solid ${backupMsg.type === 'ok' ? '#a5d6a7' : '#ef9a9a'}`,
+            borderRadius: 6, padding: '8px 12px', fontSize: 13, marginBottom: 12,
+            color: backupMsg.type === 'ok' ? '#2e7d32' : '#c62828',
+          }}>
+            {backupMsg.text}
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <button
+            style={S.btn('#1565c0')}
+            onClick={handleExport}
+            disabled={exporting}
+          >
+            {exporting ? 'エクスポート中…' : 'JSONでエクスポート'}
+          </button>
+          <button
+            style={S.btn('#555')}
+            onClick={() => fileInputRef.current?.click()}
+            disabled={importing}
+          >
+            {importing ? 'インポート中…' : 'JSONからインポート'}
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json,application/json"
+            style={{ display: 'none' }}
+            onChange={handleImport}
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ---- Offline detection ----
+function useOnline() {
+  const [online, setOnline] = useState(navigator.onLine)
+  useEffect(() => {
+    const on = () => setOnline(true)
+    const off = () => setOnline(false)
+    window.addEventListener('online', on)
+    window.addEventListener('offline', off)
+    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off) }
+  }, [])
+  return online
+}
+
 // ---- Navigation ----
-type Page = 'stock' | 'meal' | 'shopping'
+type Page = 'stock' | 'meal' | 'shopping' | 'profile'
 
 function BottomNav({ page, setPage }: { page: Page; setPage: (p: Page) => void }) {
   const tabs: { id: Page; label: string; icon: string }[] = [
     { id: 'stock', label: '在庫', icon: '🥕' },
     { id: 'meal', label: '献立', icon: '🍽' },
     { id: 'shopping', label: '買い物', icon: '🛒' },
+    { id: 'profile', label: '設定', icon: '⚙' },
   ]
   return (
     <nav style={{
@@ -761,16 +1381,17 @@ function BottomNav({ page, setPage }: { page: Page; setPage: (p: Page) => void }
 function LoginForm({ onLogin }: { onLogin: (key: string) => void }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', fontFamily: 'sans-serif' }}>
-      <div style={{ textAlign: 'center' }}>
+      <div style={{ textAlign: 'center', padding: '0 24px' }}>
         <h1 style={{ marginBottom: 8 }}>Kitchen Manager</h1>
-        <p style={{ color: '#666', marginBottom: 20 }}>APIキーを入力してください</p>
+        <p style={{ color: '#666', marginBottom: 4 }}>Anthropic API キーを入力してください</p>
+        <p style={{ color: '#aaa', fontSize: 12, marginBottom: 20 }}>キーはこのデバイス内にのみ保存されます</p>
         <form onSubmit={e => {
           e.preventDefault()
           const key = (e.currentTarget.elements.namedItem('key') as HTMLInputElement).value.trim()
           if (key) { localStorage.setItem(API_KEY_STORAGE, key); onLogin(key) }
         }} style={{ display: 'flex', gap: 8 }}>
-          <input name="key" type="password" placeholder="X-API-Key" style={{ ...S.input, width: 260 }} />
-          <button type="submit" style={S.btn()}>ログイン</button>
+          <input name="key" type="password" placeholder="sk-ant-..." style={{ ...S.input, width: 260 }} />
+          <button type="submit" style={S.btn()}>開始</button>
         </form>
       </div>
     </div>
@@ -781,15 +1402,26 @@ function LoginForm({ onLogin }: { onLogin: (key: string) => void }) {
 function App() {
   const [apiKey, setApiKey] = useState<string | null>(() => localStorage.getItem(API_KEY_STORAGE))
   const [page, setPage] = useState<Page>('stock')
+  const isOnline = useOnline()
 
   if (!apiKey) return <LoginForm onLogin={setApiKey} />
 
-  const api = makeApi(apiKey)
+  const api = makeLocalApi(apiKey)
   return (
-    <div style={{ paddingBottom: 56 }}>
+    <div style={{ paddingTop: isOnline ? 0 : 36, paddingBottom: 56 }}>
+      {!isOnline && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, zIndex: 500,
+          background: '#e65100', color: '#fff',
+          textAlign: 'center', padding: '8px 16px', fontSize: 13,
+        }}>
+          オフライン — 最後に読み込んだデータを表示しています
+        </div>
+      )}
       {page === 'stock' && <StockPage api={api} />}
       {page === 'meal' && <MealPlanPage api={api} />}
       {page === 'shopping' && <ShoppingPage api={api} />}
+      {page === 'profile' && <ProfilePage api={api} />}
       <BottomNav page={page} setPage={setPage} />
     </div>
   )

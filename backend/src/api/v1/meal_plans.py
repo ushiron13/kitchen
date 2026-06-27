@@ -7,6 +7,7 @@ from src.agents.meal_agent import build_skeleton_graph
 from src.core.database import get_session
 from src.core.security import verify_api_key
 from src.repositories.meal_plan import MealPlanRepository
+from src.repositories.profile import ProfileRepository
 from src.repositories.stock import StockRepository
 from src.schemas.meal_plan import MealPlanCreate, MealPlanRead, MealRead
 from src.schemas.shopping_list import ShoppingItem, ShoppingListRead
@@ -61,7 +62,9 @@ async def create_meal_plan(
 ) -> MealPlanRead:
     """在庫を参照してLLMで献立スケルトンを生成し保存する。"""
     stock_repo = StockRepository(session)
+    profile_repo = ProfileRepository(session)
     items = await stock_repo.list()
+    profile = await profile_repo.get()
 
     if items:
         stock_summary = "\n".join(
@@ -72,18 +75,31 @@ async def create_meal_plan(
     else:
         stock_summary = "（在庫なし）"
 
+    profile_parts = []
+    if profile:
+        if profile.family_composition:
+            profile_parts.append(f"家族構成: {profile.family_composition}")
+        if profile.food_preferences:
+            profile_parts.append(f"食事傾向: {profile.food_preferences}")
+        if profile.allergies:
+            profile_parts.append(f"アレルギー・禁忌: {profile.allergies}")
+    profile_text = "\n".join(profile_parts)
+
     graph = build_skeleton_graph()
-    result = await graph.ainvoke({
-        "stock_summary": stock_summary,
-        "start_date": data.start_date,
-        "days": data.days,
-        "meal_types": list(data.meal_types),
-        "preferences": data.preferences or "",
-        "prompt_text": "",
-        "raw_response": "",
-        "meals": [],
-        "error": None,
-    })
+    result = await graph.ainvoke(
+        {
+            "stock_summary": stock_summary,
+            "start_date": data.start_date,
+            "days": data.days,
+            "meal_types": list(data.meal_types),
+            "preferences": data.preferences or "",
+            "profile_text": profile_text,
+            "prompt_text": "",
+            "raw_response": "",
+            "meals": [],
+            "error": None,
+        }
+    )
 
     if result.get("error"):
         raise HTTPException(
@@ -102,7 +118,7 @@ async def list_meal_plans(
     session: AsyncSession = Depends(get_session),
 ) -> list[MealPlanRead]:
     repo = MealPlanRepository(session)
-    plans = await repo.list()
+    plans = await repo.list_all()
     return [_plan_to_read(p) for p in plans]
 
 
@@ -116,6 +132,18 @@ async def get_meal_plan(
     if plan is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Meal plan not found")
     return _plan_to_read(plan)
+
+
+@router.delete("/{plan_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_meal_plan(
+    plan_id: int,
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    repo = MealPlanRepository(session)
+    deleted = await repo.delete(plan_id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Meal plan not found")
+    await session.commit()
 
 
 @router.get("/{plan_id}/shopping-list", response_model=ShoppingListRead)
@@ -144,7 +172,9 @@ async def get_shopping_list(
         key = name.lower()
         if key in stock_map:
             qty, unit = stock_map[key]
-            items.append(ShoppingItem(name=name, in_stock=qty > 0, stock_quantity=qty, stock_unit=unit))
+            items.append(
+                ShoppingItem(name=name, in_stock=qty > 0, stock_quantity=qty, stock_unit=unit)
+            )
         else:
             items.append(ShoppingItem(name=name, in_stock=False))
 

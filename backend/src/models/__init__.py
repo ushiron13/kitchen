@@ -1,11 +1,17 @@
-from .food import FoodMaster, FoodAlias
-from .stock import StockItem, StockTransaction
+from .food import FoodAlias, FoodMaster
+from .meal_plan import Meal, MealPlan
+from .profile import UserProfile
 from .recipe import Recipe, RecipeIngredient
-from .meal_plan import MealPlan, Meal
+from .stock import StockItem, StockTransaction
 
 __all__ = [
-    "FoodMaster", "FoodAlias",
-    "StockItem", "StockTransaction",
-    "Recipe", "RecipeIngredient",
-    "MealPlan", "Meal",
+    "FoodMaster",
+    "FoodAlias",
+    "StockItem",
+    "StockTransaction",
+    "Recipe",
+    "RecipeIngredient",
+    "MealPlan",
+    "Meal",
+    "UserProfile",
 ]

@@ -1,4 +1,4 @@
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -8,20 +8,20 @@ FoodCategory = Literal["refrigerated", "frozen", "pantry", "ambient", "seasoning
 class FoodCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     category: FoodCategory
-    default_shelf_days: Optional[int] = Field(None, ge=1)
+    default_shelf_days: int | None = Field(None, ge=1)
 
 
 class FoodUpdate(BaseModel):
-    name: Optional[str] = Field(None, min_length=1, max_length=100)
-    category: Optional[FoodCategory] = None
-    default_shelf_days: Optional[int] = Field(None, ge=1)
+    name: str | None = Field(None, min_length=1, max_length=100)
+    category: FoodCategory | None = None
+    default_shelf_days: int | None = Field(None, ge=1)
 
 
 class FoodRead(BaseModel):
     id: int
     name: str
     category: FoodCategory
-    default_shelf_days: Optional[int]
+    default_shelf_days: int | None
     created_at: str
     updated_at: str
 

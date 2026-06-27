@@ -127,3 +127,57 @@ async def test_get_recipe(client, meal_id):
 async def test_get_recipe_not_found(client):
     r = await client.get("/api/v1/recipes/9999", headers={"X-API-Key": TEST_API_KEY})
     assert r.status_code == 404
+
+
+async def test_delete_meal(client, meal_id):
+    r = await client.delete(f"/api/v1/meals/{meal_id}", headers={"X-API-Key": TEST_API_KEY})
+    assert r.status_code == 204
+
+    r2 = await client.post(f"/api/v1/meals/{meal_id}/recipe", headers={"X-API-Key": TEST_API_KEY})
+    assert r2.status_code == 404
+
+
+async def test_delete_meal_not_found(client):
+    r = await client.delete("/api/v1/meals/9999", headers={"X-API-Key": TEST_API_KEY})
+    assert r.status_code == 404
+
+
+async def test_update_meal_status(client, meal_id):
+    r = await client.patch(
+        f"/api/v1/meals/{meal_id}/status",
+        json={"status": "cooked"},
+        headers={"X-API-Key": TEST_API_KEY},
+    )
+    assert r.status_code == 204
+
+    r2 = await client.patch(
+        f"/api/v1/meals/{meal_id}/status",
+        json={"status": "skipped"},
+        headers={"X-API-Key": TEST_API_KEY},
+    )
+    assert r2.status_code == 204
+
+    r3 = await client.patch(
+        f"/api/v1/meals/{meal_id}/status",
+        json={"status": "planned"},
+        headers={"X-API-Key": TEST_API_KEY},
+    )
+    assert r3.status_code == 204
+
+
+async def test_update_meal_status_invalid(client, meal_id):
+    r = await client.patch(
+        f"/api/v1/meals/{meal_id}/status",
+        json={"status": "unknown"},
+        headers={"X-API-Key": TEST_API_KEY},
+    )
+    assert r.status_code == 422
+
+
+async def test_update_meal_status_not_found(client):
+    r = await client.patch(
+        "/api/v1/meals/9999/status",
+        json={"status": "cooked"},
+        headers={"X-API-Key": TEST_API_KEY},
+    )
+    assert r.status_code == 404

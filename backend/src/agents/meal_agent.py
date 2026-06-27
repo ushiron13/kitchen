@@ -1,11 +1,11 @@
 import json
 import logging
 import re
-from typing import Optional
 
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, StateGraph
+from pydantic import SecretStr
 from typing_extensions import TypedDict
 
 from src.core.config import settings
@@ -39,7 +39,7 @@ def _extract_json_array(raw: str) -> str:
     except Exception:
         pass
     # [ から始まる最長の配列ブロックを探す
-    m = re.search(r'(\[.*\])', text, re.DOTALL)
+    m = re.search(r"(\[.*\])", text, re.DOTALL)
     if m:
         return m.group(1)
     return text
@@ -49,22 +49,28 @@ def _extract_json_array(raw: str) -> str:
 # Skeleton graph
 # ---------------------------------------------------------------------------
 
+
 class SkeletonState(TypedDict):
     stock_summary: str
     start_date: str
     days: int
     meal_types: list[str]
     preferences: str  # ユーザーの自然言語要望（例: "和食多め、30分以内"）
+    profile_text: str  # ユーザープロファイル（F-05: 家族構成・食事傾向・アレルギー）
     prompt_text: str
     raw_response: str
     meals: list[dict]
-    error: Optional[str]
+    error: str | None
 
 
 def _build_skeleton_prompt(state: SkeletonState) -> SkeletonState:
     types_str = "、".join(state["meal_types"])
-    pref_line = f"要望: {state['preferences']}\n" if state.get("preferences") else ""
+    pref_line = f"今回の要望: {state['preferences']}\n" if state.get("preferences") else ""
+    profile_line = (
+        f"家族プロファイル:\n{state['profile_text']}\n\n" if state.get("profile_text") else ""
+    )
     text = (
+        f"{profile_line}"
         f"在庫食材:\n{state['stock_summary']}\n\n"
         f"期間: {state['start_date']} から {state['days']} 日間\n"
         f"食事区分: {types_str}\n"
@@ -77,17 +83,20 @@ def _build_skeleton_prompt(state: SkeletonState) -> SkeletonState:
 
 
 def _call_skeleton_llm(state: SkeletonState) -> SkeletonState:
-    llm = ChatAnthropic(
+    llm = ChatAnthropic(  # type: ignore[call-arg]
         model=_SONNET,
-        api_key=settings.anthropic_api_key,
+        api_key=SecretStr(settings.anthropic_api_key),
         temperature=0.7,
-        max_tokens=4096,  # 多めの食事区分・日数でも切れないように拡張
+        max_tokens=4096,
     )
     messages = [
-        SystemMessage(content=(
-            "あなたは家庭の献立を提案するアシスタントです。"
-            "JSONのみ出力し、説明やコードブロックは使わないでください。"
-        )),
+        SystemMessage(
+            content=(
+                "あなたは家庭の献立を提案するアシスタントです。"
+                "プロファイルに記載された家族の嗜好・アレルギーを必ず考慮してください。"
+                "JSONのみ出力し、説明やコードブロックは使わないでください。"
+            )
+        ),
         HumanMessage(content=state["prompt_text"]),
     ]
     response = llm.invoke(messages)
@@ -122,13 +131,40 @@ def build_skeleton_graph():
 # Recipe graph
 # ---------------------------------------------------------------------------
 
+
 class RecipeState(TypedDict):
     concept: str
     estimated_ingredients: list[str]
     prompt_text: str
     raw_response: str
-    recipe: Optional[dict]
-    error: Optional[str]
+    recipe: dict | None
+    error: str | None
+
+
+_RECIPE_FORMAT = (
+    "## 材料（2〜4人前）\n"
+    "- 食材名: 分量・単位\n\n"
+    "## 下準備（省略可）\n"
+    "- 下準備の手順\n\n"
+    "## 手順\n"
+    "1. 手順の説明\n\n"
+    "## Tips（省略可）\n"
+    "- コツや補足\n"
+)
+
+_RECIPE_EXAMPLE = (
+    '{"name":"豚の生姜焼き",'
+    '"instructions_md":"## 材料（2〜4人前）\\n'
+    "- 豚ロース薄切り: 300g\\n- 玉ねぎ: 1/2個\\n- しょうゆ: 大さじ2\\n"
+    "- みりん: 大さじ1\\n- 砂糖: 小さじ1\\n\\n"
+    "## 手順\\n1. 豚肉は食べやすい大きさに切る\\n"
+    "2. 玉ねぎは薄切りにする\\n3. フライパンに油を熱し、玉ねぎを炒める\\n"
+    '4. 豚肉を加えて炒め、調味料を絡めて完成",'
+    '"cook_time_min":20,"cost_estimate":"600円程度",'
+    '"ingredients":['
+    '{"raw_name":"豚ロース薄切り","quantity":300.0,"unit":"g","is_main":true},'
+    '{"raw_name":"玉ねぎ","quantity":0.5,"unit":"個","is_main":false}]}'
+)
 
 
 def _build_recipe_prompt(state: RecipeState) -> RecipeState:
@@ -136,26 +172,32 @@ def _build_recipe_prompt(state: RecipeState) -> RecipeState:
     text = (
         f"料理名: {state['concept']}\n"
         f"利用可能な食材: {ingr_str}\n\n"
-        "家庭で作りやすい2〜4人前のレシピをJSONのみで出力してください:\n"
-        '{"name":"料理名","instructions_md":"## 材料\\n...\\n\\n## 手順\\n1. ...",'
-        '"cook_time_min":30,"cost_estimate":"500円程度",'
-        '"ingredients":[{"raw_name":"食材","quantity":100.0,"unit":"g","is_main":true}]}'
+        "家庭で作りやすい2〜4人前のレシピをJSONで出力してください。\n"
+        "instructions_md は必ず以下のフォーマットに従ってください:\n\n"
+        f"{_RECIPE_FORMAT}\n"
+        "出力例:\n"
+        f"{_RECIPE_EXAMPLE}"
     )
     return {**state, "prompt_text": text}
 
 
 def _call_recipe_llm(state: RecipeState) -> RecipeState:
-    llm = ChatAnthropic(
+    llm = ChatAnthropic(  # type: ignore[call-arg]
         model=_SONNET,
-        api_key=settings.anthropic_api_key,
+        api_key=SecretStr(settings.anthropic_api_key),
         temperature=0.5,
         max_tokens=4096,
     )
     messages = [
-        SystemMessage(content=(
-            "あなたはプロの料理家です。家庭で実践できる詳細なレシピをJSON形式で出力してください。"
-            "説明やコードブロックは使わず、JSONのみ出力してください。"
-        )),
+        SystemMessage(
+            content=(
+                "あなたはプロの料理家です。家庭で実践できる詳細なレシピをJSON形式で出力してください。"
+                "instructions_md のセクション見出しは必ず ## を使い、"
+                "材料は '- 食材名: 分量・単位' 形式、"
+                "手順は '1. ' から始まる番号リスト形式で統一してください。"
+                "説明やコードブロックは使わず、JSONのみ出力してください。"
+            )
+        ),
         HumanMessage(content=state["prompt_text"]),
     ]
     response = llm.invoke(messages)
