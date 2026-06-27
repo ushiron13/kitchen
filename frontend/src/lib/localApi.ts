@@ -6,6 +6,11 @@ import {
   MealRecord,
   RecipeRecord,
 } from './db'
+import {
+  generateMealPlan,
+  generateRecipeFromConcept,
+  generateSuggestedRecipes,
+} from './ai'
 
 function now(): string {
   return new Date().toISOString()
@@ -200,13 +205,71 @@ export function makeLocalApi(_apiKey: string) {
     },
 
     // ---- Meal Plans ----
-    createMealPlan: async (_p: {
+    createMealPlan: async (p: {
       start_date: string
       days: number
       meal_types: string[]
       preferences?: string
     }) => {
-      throw new Error('AI献立生成はPhase 2で実装予定です。現在は準備中です。')
+      const stockItems = await db.stockItems.toArray()
+      const foods = await db.foods.toArray()
+      const foodMap = new Map(foods.map(f => [f.id!, f]))
+
+      const stockSummary = stockItems.length > 0
+        ? stockItems.map(i => {
+            const food = foodMap.get(i.food_id)
+            if (!food) return null
+            const expiryStr = i.expiry_date ? `（期限: ${i.expiry_date}）` : ''
+            return `- ${food.name}: ${i.quantity}${i.unit}${expiryStr}`
+          }).filter(Boolean).join('\n')
+        : '（在庫なし）'
+
+      const profile = await db.profile.get(1)
+      const profileParts: string[] = []
+      if (profile?.family_composition) profileParts.push(`家族構成: ${profile.family_composition}`)
+      if (profile?.food_preferences) profileParts.push(`食事傾向: ${profile.food_preferences}`)
+      if (profile?.allergies) profileParts.push(`アレルギー・禁忌: ${profile.allergies}`)
+
+      const skeletons = await generateMealPlan(_apiKey, {
+        stockSummary,
+        startDate: p.start_date,
+        days: p.days,
+        mealTypes: p.meal_types,
+        preferences: p.preferences ?? '',
+        profileText: profileParts.join('\n'),
+      })
+
+      if (skeletons.length === 0) throw new Error('献立の生成に失敗しました')
+
+      const endDate = skeletons.reduce((max, m) => m.served_date > max ? m.served_date : max, p.start_date)
+      const t = now()
+
+      const planId = await db.mealPlans.add({
+        start_date: p.start_date,
+        end_date: endDate,
+        status: 'active',
+        notes: null,
+        created_at: t,
+        updated_at: t,
+      })
+
+      const mealRecords = skeletons.map(s => ({
+        meal_plan_id: planId as number,
+        recipe_id: null,
+        served_date: s.served_date,
+        meal_type: s.meal_type,
+        status: 'planned',
+        concept: s.concept,
+        estimated_ingredients: JSON.stringify(s.estimated_ingredients ?? []),
+        cook_time_min_estimate: s.cook_time_min_estimate ?? null,
+        notes: null,
+        created_at: t,
+        updated_at: t,
+      }))
+      await db.meals.bulkAdd(mealRecords)
+
+      const plan = await db.mealPlans.get(planId)
+      return toMealPlan(plan as MealPlanRecord & { id: number })
     },
 
     getMealPlans: async () => {
@@ -277,8 +340,53 @@ export function makeLocalApi(_apiKey: string) {
     },
 
     // ---- Recipes ----
-    generateRecipe: async (_mealId: number) => {
-      throw new Error('AIレシピ生成はPhase 2で実装予定です。現在は準備中です。')
+    generateRecipe: async (mealId: number) => {
+      const meal = await db.meals.get(mealId)
+      if (!meal) throw new Error('献立が見つかりません')
+
+      const concept = meal.concept ?? 'おまかせ料理'
+      let ingredients: string[] = []
+      try { ingredients = JSON.parse(meal.estimated_ingredients) } catch { /* ignore */ }
+
+      // F-RECIPE-02: 同名レシピがあれば再利用してコスト節約
+      const existing = await db.recipes.filter(r => r.name === concept).first()
+      if (existing && existing.id !== undefined) {
+        if (meal.recipe_id !== existing.id) {
+          await db.recipes.update(existing.id, { reuse_count: existing.reuse_count + 1, updated_at: now() })
+          await db.meals.update(mealId, { recipe_id: existing.id, updated_at: now() })
+        }
+        return toRecipe(existing as RecipeRecord & { id: number })
+      }
+
+      const result = await generateRecipeFromConcept(_apiKey, concept, ingredients)
+      const t = now()
+      const recipeId = await db.recipes.add({
+        name: result.name,
+        instructions_md: result.instructions_md,
+        cook_time_min: result.cook_time_min,
+        cost_estimate: result.cost_estimate,
+        is_favorite: false,
+        reuse_count: 0,
+        created_at: t,
+        updated_at: t,
+      })
+      if (result.ingredients?.length) {
+        await db.recipeIngredients.bulkAdd(
+          result.ingredients.map(i => ({
+            recipe_id: recipeId as number,
+            food_id: null,
+            raw_name: i.raw_name,
+            quantity: i.quantity,
+            unit: i.unit,
+            is_main: i.is_main,
+            notes: null,
+          }))
+        )
+      }
+      await db.meals.update(mealId, { recipe_id: recipeId as number, updated_at: t })
+
+      const recipe = await db.recipes.get(recipeId)
+      return toRecipe(recipe as RecipeRecord & { id: number })
     },
 
     getRecipe: async (id: number) => {
@@ -296,8 +404,40 @@ export function makeLocalApi(_apiKey: string) {
       return Promise.all(all.map(r => toRecipe(r as RecipeRecord & { id: number })))
     },
 
-    suggestRecipes: async (_foodNames: string[], _count = 1) => {
-      throw new Error('AIレシピ提案はPhase 2で実装予定です。現在は準備中です。')
+    suggestRecipes: async (foodNames: string[], count = 1) => {
+      const results = await generateSuggestedRecipes(_apiKey, foodNames, count)
+      if (results.length === 0) throw new Error('レシピ提案に失敗しました')
+
+      const t = now()
+      const recipes = []
+      for (const result of results) {
+        const recipeId = await db.recipes.add({
+          name: result.name,
+          instructions_md: result.instructions_md,
+          cook_time_min: result.cook_time_min,
+          cost_estimate: result.cost_estimate,
+          is_favorite: false,
+          reuse_count: 0,
+          created_at: t,
+          updated_at: t,
+        })
+        if (result.ingredients?.length) {
+          await db.recipeIngredients.bulkAdd(
+            result.ingredients.map(i => ({
+              recipe_id: recipeId as number,
+              food_id: null,
+              raw_name: i.raw_name,
+              quantity: i.quantity,
+              unit: i.unit,
+              is_main: i.is_main,
+              notes: null,
+            }))
+          )
+        }
+        const recipe = await db.recipes.get(recipeId)
+        recipes.push(await toRecipe(recipe as RecipeRecord & { id: number }))
+      }
+      return recipes
     },
 
     // ---- Profile ----
