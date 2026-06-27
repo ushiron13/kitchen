@@ -1,5 +1,4 @@
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,14 +8,14 @@ from src.schemas.profile import ProfileUpdate
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    return datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
 
 
 class ProfileRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
-    async def get(self) -> Optional[UserProfile]:
+    async def get(self) -> UserProfile | None:
         """プロファイルを取得する。存在しない場合は None を返す（副作用なし）。"""
         result = await self.session.execute(select(UserProfile).where(UserProfile.id == 1))
         return result.scalar_one_or_none()

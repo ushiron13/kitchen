@@ -1,5 +1,3 @@
-from typing import Optional
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -44,20 +42,20 @@ async def create_stock(
     try:
         item = await repo.create(data)
         await session.commit()
-    except IntegrityError:
+    except IntegrityError as err:
         await session.rollback()
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Invalid food_id",
-        )
+        ) from err
     item = await repo.get(item.id)
     return _to_read(item)
 
 
 @router.get("", response_model=list[StockRead])
 async def list_stock(
-    category: Optional[str] = None,
-    food_id: Optional[int] = None,
+    category: str | None = None,
+    food_id: int | None = None,
     session: AsyncSession = Depends(get_session),
 ) -> list[StockRead]:
     repo = StockRepository(session)

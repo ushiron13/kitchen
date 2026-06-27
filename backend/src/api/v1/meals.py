@@ -8,7 +8,7 @@ from src.core.database import get_session
 from src.core.security import verify_api_key
 from src.repositories.meal_plan import MealPlanRepository
 from src.repositories.recipe import RecipeRepository
-from src.schemas.meal_plan import MealRead, MealStatusUpdate
+from src.schemas.meal_plan import MealStatusUpdate
 from src.schemas.recipe import RecipeIngredientRead, RecipeRead
 
 router = APIRouter(
@@ -103,14 +103,16 @@ async def generate_recipe_for_meal(
         return _recipe_to_read(recipe)
 
     graph = build_recipe_graph()
-    result = await graph.ainvoke({
-        "concept": concept,
-        "estimated_ingredients": ingredients,
-        "prompt_text": "",
-        "raw_response": "",
-        "recipe": None,
-        "error": None,
-    })
+    result = await graph.ainvoke(
+        {
+            "concept": concept,
+            "estimated_ingredients": ingredients,
+            "prompt_text": "",
+            "raw_response": "",
+            "recipe": None,
+            "error": None,
+        }
+    )
 
     if result.get("error") or not result.get("recipe"):
         raise HTTPException(

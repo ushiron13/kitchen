@@ -16,9 +16,9 @@ class MealFeedback(Base):
     meal_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("meal.id", ondelete="CASCADE"), nullable=False
     )
-    satisfaction: Mapped[Optional[int]] = mapped_column(Integer)  # 1–5
-    skip_reason: Mapped[Optional[str]] = mapped_column(Text)
-    notes: Mapped[Optional[str]] = mapped_column(Text)
+    satisfaction: Mapped[int | None] = mapped_column(Integer)  # 1–5
+    skip_reason: Mapped[str | None] = mapped_column(Text)
+    notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[str] = mapped_column(Text, nullable=False)
 
     meal: Mapped["Meal"] = relationship("Meal", back_populates="feedbacks")
@@ -33,7 +33,7 @@ class MealPlan(Base):
     start_date: Mapped[str] = mapped_column(Text, nullable=False)
     end_date: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(Text, nullable=False, default="draft")
-    notes: Mapped[Optional[str]] = mapped_column(Text)
+    notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[str] = mapped_column(Text, nullable=False)
     updated_at: Mapped[str] = mapped_column(Text, nullable=False)
 
@@ -54,22 +54,22 @@ class Meal(Base):
     __tablename__ = "meal"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    meal_plan_id: Mapped[Optional[int]] = mapped_column(
+    meal_plan_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("meal_plan.id", ondelete="CASCADE")
     )
-    recipe_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("recipe.id"))
+    recipe_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("recipe.id"))
     served_date: Mapped[str] = mapped_column(Text, nullable=False)
     meal_type: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(Text, nullable=False, default="planned")
-    concept: Mapped[Optional[str]] = mapped_column(Text)
-    estimated_ingredients: Mapped[Optional[str]] = mapped_column(Text)  # JSON array
-    cook_time_min_estimate: Mapped[Optional[int]] = mapped_column(Integer)
-    notes: Mapped[Optional[str]] = mapped_column(Text)
+    concept: Mapped[str | None] = mapped_column(Text)
+    estimated_ingredients: Mapped[str | None] = mapped_column(Text)  # JSON array
+    cook_time_min_estimate: Mapped[int | None] = mapped_column(Integer)
+    notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[str] = mapped_column(Text, nullable=False)
     updated_at: Mapped[str] = mapped_column(Text, nullable=False)
 
     meal_plan: Mapped[Optional["MealPlan"]] = relationship("MealPlan", back_populates="meals")
-    recipe: Mapped[Optional["Recipe"]] = relationship("Recipe")  # type: ignore[name-defined]
+    recipe: Mapped[Optional["Recipe"]] = relationship("Recipe")  # type: ignore[name-defined]  # noqa: F821
     feedbacks: Mapped[list["MealFeedback"]] = relationship(
         "MealFeedback", back_populates="meal", cascade="all, delete-orphan"
     )

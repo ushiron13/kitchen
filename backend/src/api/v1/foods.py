@@ -1,5 +1,3 @@
-from typing import Optional
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -27,15 +25,17 @@ async def create_food(
     try:
         food = await repo.create(data)
         await session.commit()
-    except IntegrityError:
+    except IntegrityError as err:
         await session.rollback()
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Food name already exists")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Food name already exists"
+        ) from err
     return FoodRead.model_validate(food)
 
 
 @router.get("", response_model=list[FoodRead])
 async def list_foods(
-    category: Optional[str] = None,
+    category: str | None = None,
     session: AsyncSession = Depends(get_session),
 ) -> list[FoodRead]:
     repo = FoodRepository(session)

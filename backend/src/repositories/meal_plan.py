@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,7 +12,7 @@ from src.schemas.meal_plan import MealPlanCreate
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    return datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
 
 
 class MealPlanRepository:
@@ -57,12 +56,8 @@ class MealPlanRepository:
         await self.session.flush()
         return await self.get(plan.id)
 
-    async def get(self, plan_id: int) -> Optional[MealPlan]:
-        stmt = (
-            select(MealPlan)
-            .where(MealPlan.id == plan_id)
-            .options(selectinload(MealPlan.meals))
-        )
+    async def get(self, plan_id: int) -> MealPlan | None:
+        stmt = select(MealPlan).where(MealPlan.id == plan_id).options(selectinload(MealPlan.meals))
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
@@ -75,12 +70,12 @@ class MealPlanRepository:
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
-    async def get_meal(self, meal_id: int) -> Optional[Meal]:
+    async def get_meal(self, meal_id: int) -> Meal | None:
         stmt = select(Meal).where(Meal.id == meal_id)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def attach_recipe(self, meal_id: int, recipe_id: int) -> Optional[Meal]:
+    async def attach_recipe(self, meal_id: int, recipe_id: int) -> Meal | None:
         meal = await self.session.get(Meal, meal_id)
         if meal is None:
             return None
@@ -89,7 +84,7 @@ class MealPlanRepository:
         await self.session.flush()
         return meal
 
-    async def update_meal_status(self, meal_id: int, new_status: str) -> Optional[Meal]:
+    async def update_meal_status(self, meal_id: int, new_status: str) -> Meal | None:
         meal = await self.session.get(Meal, meal_id)
         if meal is None:
             return None

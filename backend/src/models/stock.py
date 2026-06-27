@@ -1,5 +1,3 @@
-from typing import Optional
-
 from sqlalchemy import REAL, CheckConstraint, ForeignKey, Index, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -13,16 +11,16 @@ class StockItem(Base):
     food_id: Mapped[int] = mapped_column(Integer, ForeignKey("food_master.id"), nullable=False)
     quantity: Mapped[float] = mapped_column(REAL, nullable=False)
     unit: Mapped[str] = mapped_column(Text, nullable=False)
-    expiry_date: Mapped[Optional[str]] = mapped_column(Text)
-    purchased_date: Mapped[Optional[str]] = mapped_column(Text)
-    category: Mapped[Optional[str]] = mapped_column(Text)
+    expiry_date: Mapped[str | None] = mapped_column(Text)
+    purchased_date: Mapped[str | None] = mapped_column(Text)
+    category: Mapped[str | None] = mapped_column(Text)
     opened: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    location: Mapped[Optional[str]] = mapped_column(Text)
-    notes: Mapped[Optional[str]] = mapped_column(Text)
+    location: Mapped[str | None] = mapped_column(Text)
+    notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[str] = mapped_column(Text, nullable=False)
     updated_at: Mapped[str] = mapped_column(Text, nullable=False)
 
-    food: Mapped["FoodMaster"] = relationship("FoodMaster", back_populates="stock_items")  # type: ignore[name-defined]
+    food: Mapped["FoodMaster"] = relationship("FoodMaster", back_populates="stock_items")  # type: ignore[name-defined]  # noqa: F821
     transactions: Mapped[list["StockTransaction"]] = relationship(
         "StockTransaction", back_populates="stock_item", cascade="all, delete-orphan"
     )
@@ -31,7 +29,8 @@ class StockItem(Base):
         CheckConstraint("quantity >= 0", name="ck_stock_item_quantity"),
         CheckConstraint("opened IN (0,1)", name="ck_stock_item_opened"),
         CheckConstraint(
-            "category IS NULL OR category IN ('refrigerated','frozen','pantry','ambient','seasoning')",
+            "category IS NULL OR category IN "
+            "('refrigerated','frozen','pantry','ambient','seasoning')",
             name="ck_stock_item_category",
         ),
         Index("idx_stock_item_food_id", "food_id"),
@@ -46,8 +45,8 @@ class StockTransaction(Base):
     stock_item_id: Mapped[int] = mapped_column(Integer, ForeignKey("stock_item.id"), nullable=False)
     tx_type: Mapped[str] = mapped_column(Text, nullable=False)
     quantity_delta: Mapped[float] = mapped_column(REAL, nullable=False)
-    meal_id: Mapped[Optional[int]] = mapped_column(Integer)
-    reason: Mapped[Optional[str]] = mapped_column(Text)
+    meal_id: Mapped[int | None] = mapped_column(Integer)
+    reason: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[str] = mapped_column(Text, nullable=False)
 
     stock_item: Mapped["StockItem"] = relationship("StockItem", back_populates="transactions")

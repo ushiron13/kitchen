@@ -1,13 +1,11 @@
-from typing import Optional
-
 from pydantic import BaseModel
 
 
 class ShoppingItem(BaseModel):
     name: str
     in_stock: bool
-    stock_quantity: Optional[float] = None
-    stock_unit: Optional[str] = None
+    stock_quantity: float | None = None
+    stock_unit: str | None = None
 
 
 class ShoppingListRead(BaseModel):

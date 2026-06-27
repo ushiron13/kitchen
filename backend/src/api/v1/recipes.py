@@ -1,5 +1,3 @@
-from typing import Optional
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -44,8 +42,8 @@ def _recipe_to_read(recipe) -> RecipeRead:
 
 @router.get("", response_model=list[RecipeRead])
 async def list_recipes(
-    q: Optional[str] = None,
-    food_name: Optional[str] = None,
+    q: str | None = None,
+    food_name: str | None = None,
     session: AsyncSession = Depends(get_session),
 ) -> list[RecipeRead]:
     """レシピ一覧検索（F-RECIPE-03）。q=名前、food_name=食材名で部分一致フィルタ。"""
@@ -80,14 +78,16 @@ async def suggest_recipes(
         concept = foods_str if i == 0 else f"{foods_str} アレンジ{i}"
 
         graph = build_recipe_graph()
-        result = await graph.ainvoke({
-            "concept": concept,
-            "estimated_ingredients": data.food_names,
-            "prompt_text": "",
-            "raw_response": "",
-            "recipe": None,
-            "error": None,
-        })
+        result = await graph.ainvoke(
+            {
+                "concept": concept,
+                "estimated_ingredients": data.food_names,
+                "prompt_text": "",
+                "raw_response": "",
+                "recipe": None,
+                "error": None,
+            }
+        )
         if result.get("error") or not result.get("recipe"):
             continue
 

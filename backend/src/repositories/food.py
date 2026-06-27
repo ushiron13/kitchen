@@ -1,5 +1,4 @@
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,7 +8,7 @@ from src.schemas.food import FoodCreate, FoodUpdate
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    return datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
 
 
 class FoodRepository:
@@ -30,18 +29,18 @@ class FoodRepository:
         await self.session.refresh(food)
         return food
 
-    async def get(self, food_id: int) -> Optional[FoodMaster]:
+    async def get(self, food_id: int) -> FoodMaster | None:
         result = await self.session.get(FoodMaster, food_id)
         return result
 
-    async def list(self, category: Optional[str] = None) -> list[FoodMaster]:
+    async def list(self, category: str | None = None) -> list[FoodMaster]:
         stmt = select(FoodMaster).order_by(FoodMaster.name)
         if category:
             stmt = stmt.where(FoodMaster.category == category)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
-    async def update(self, food_id: int, data: FoodUpdate) -> Optional[FoodMaster]:
+    async def update(self, food_id: int, data: FoodUpdate) -> FoodMaster | None:
         food = await self.get(food_id)
         if food is None:
             return None

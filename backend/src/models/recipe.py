@@ -1,5 +1,3 @@
-from typing import Optional
-
 from sqlalchemy import REAL, CheckConstraint, ForeignKey, Index, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -12,15 +10,15 @@ class Recipe(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(Text, nullable=False)
     instructions_md: Mapped[str] = mapped_column(Text, nullable=False)
-    cook_time_min: Mapped[Optional[int]] = mapped_column(Integer)
-    cost_estimate: Mapped[Optional[str]] = mapped_column(Text)
-    image_path: Mapped[Optional[str]] = mapped_column(Text)
+    cook_time_min: Mapped[int | None] = mapped_column(Integer)
+    cost_estimate: Mapped[str | None] = mapped_column(Text)
+    image_path: Mapped[str | None] = mapped_column(Text)
     source: Mapped[str] = mapped_column(Text, nullable=False, default="llm")
-    external_id: Mapped[Optional[str]] = mapped_column(Text)
+    external_id: Mapped[str | None] = mapped_column(Text)
     is_favorite: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     is_archived: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     reuse_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    metadata_json: Mapped[Optional[str]] = mapped_column(Text)
+    metadata_json: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[str] = mapped_column(Text, nullable=False)
     updated_at: Mapped[str] = mapped_column(Text, nullable=False)
 
@@ -44,12 +42,12 @@ class RecipeIngredient(Base):
     recipe_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("recipe.id", ondelete="CASCADE"), nullable=False
     )
-    food_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("food_master.id"))
-    raw_name: Mapped[Optional[str]] = mapped_column(Text)
-    quantity: Mapped[Optional[float]] = mapped_column(REAL)
-    unit: Mapped[Optional[str]] = mapped_column(Text)
+    food_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("food_master.id"))
+    raw_name: Mapped[str | None] = mapped_column(Text)
+    quantity: Mapped[float | None] = mapped_column(REAL)
+    unit: Mapped[str | None] = mapped_column(Text)
     is_main: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    notes: Mapped[Optional[str]] = mapped_column(Text)
+    notes: Mapped[str | None] = mapped_column(Text)
 
     recipe: Mapped["Recipe"] = relationship("Recipe", back_populates="ingredients")
 

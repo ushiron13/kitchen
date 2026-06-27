@@ -1,5 +1,4 @@
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,7 +9,7 @@ from src.schemas.stock import StockCreate, StockUpdate, TxCreate
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    return datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
 
 
 class StockRepository:
@@ -47,19 +46,17 @@ class StockRepository:
         await self.session.refresh(item)
         return item
 
-    async def get(self, item_id: int) -> Optional[StockItem]:
+    async def get(self, item_id: int) -> StockItem | None:
         stmt = (
-            select(StockItem)
-            .where(StockItem.id == item_id)
-            .options(selectinload(StockItem.food))
+            select(StockItem).where(StockItem.id == item_id).options(selectinload(StockItem.food))
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
     async def list(
         self,
-        category: Optional[str] = None,
-        food_id: Optional[int] = None,
+        category: str | None = None,
+        food_id: int | None = None,
     ) -> list[StockItem]:
         from src.models.food import FoodMaster
 
@@ -72,13 +69,14 @@ class StockRepository:
         if food_id is not None:
             stmt = stmt.where(StockItem.food_id == food_id)
         if category:
-            from sqlalchemy import case, coalesce
+            from sqlalchemy import coalesce
+
             effective_category = coalesce(StockItem.category, FoodMaster.category)
             stmt = stmt.where(effective_category == category)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
-    async def update(self, item_id: int, data: StockUpdate) -> Optional[StockItem]:
+    async def update(self, item_id: int, data: StockUpdate) -> StockItem | None:
         item = await self.get(item_id)
         if item is None:
             return None
@@ -92,7 +90,7 @@ class StockRepository:
         await self.session.refresh(item)
         return item
 
-    async def record_transaction(self, item_id: int, data: TxCreate) -> Optional[StockItem]:
+    async def record_transaction(self, item_id: int, data: TxCreate) -> StockItem | None:
         item = await self.get(item_id)
         if item is None:
             return None

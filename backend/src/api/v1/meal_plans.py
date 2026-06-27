@@ -86,18 +86,20 @@ async def create_meal_plan(
     profile_text = "\n".join(profile_parts)
 
     graph = build_skeleton_graph()
-    result = await graph.ainvoke({
-        "stock_summary": stock_summary,
-        "start_date": data.start_date,
-        "days": data.days,
-        "meal_types": list(data.meal_types),
-        "preferences": data.preferences or "",
-        "profile_text": profile_text,
-        "prompt_text": "",
-        "raw_response": "",
-        "meals": [],
-        "error": None,
-    })
+    result = await graph.ainvoke(
+        {
+            "stock_summary": stock_summary,
+            "start_date": data.start_date,
+            "days": data.days,
+            "meal_types": list(data.meal_types),
+            "preferences": data.preferences or "",
+            "profile_text": profile_text,
+            "prompt_text": "",
+            "raw_response": "",
+            "meals": [],
+            "error": None,
+        }
+    )
 
     if result.get("error"):
         raise HTTPException(
@@ -170,7 +172,9 @@ async def get_shopping_list(
         key = name.lower()
         if key in stock_map:
             qty, unit = stock_map[key]
-            items.append(ShoppingItem(name=name, in_stock=qty > 0, stock_quantity=qty, stock_unit=unit))
+            items.append(
+                ShoppingItem(name=name, in_stock=qty > 0, stock_quantity=qty, stock_unit=unit)
+            )
         else:
             items.append(ShoppingItem(name=name, in_stock=False))
 

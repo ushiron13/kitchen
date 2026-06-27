@@ -1,5 +1,4 @@
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,7 +8,7 @@ from src.models.recipe import Recipe, RecipeIngredient
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    return datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
 
 
 class RecipeRepository:
@@ -43,16 +42,14 @@ class RecipeRepository:
         await self.session.flush()
         return await self.get(recipe.id)
 
-    async def get(self, recipe_id: int) -> Optional[Recipe]:
+    async def get(self, recipe_id: int) -> Recipe | None:
         stmt = (
-            select(Recipe)
-            .where(Recipe.id == recipe_id)
-            .options(selectinload(Recipe.ingredients))
+            select(Recipe).where(Recipe.id == recipe_id).options(selectinload(Recipe.ingredients))
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def find_by_name(self, name: str) -> Optional[Recipe]:
+    async def find_by_name(self, name: str) -> Recipe | None:
         """同名レシピを検索（DB再利用 F-RECIPE-02）。"""
         stmt = (
             select(Recipe)
@@ -72,21 +69,18 @@ class RecipeRepository:
 
     async def list_all(
         self,
-        q: Optional[str] = None,
-        food_name: Optional[str] = None,
+        q: str | None = None,
+        food_name: str | None = None,
     ) -> list[Recipe]:
         """レシピ一覧。q=名前部分一致、food_name=食材名部分一致（F-RECIPE-03）。"""
         stmt = (
-            select(Recipe)
-            .where(Recipe.is_archived == 0)
-            .options(selectinload(Recipe.ingredients))
+            select(Recipe).where(Recipe.is_archived == 0).options(selectinload(Recipe.ingredients))
         )
         if q:
             stmt = stmt.where(Recipe.name.ilike(f"%{q}%"))
         if food_name:
-            stmt = (
-                stmt.join(Recipe.ingredients)
-                .where(RecipeIngredient.raw_name.ilike(f"%{food_name}%"))
+            stmt = stmt.join(Recipe.ingredients).where(
+                RecipeIngredient.raw_name.ilike(f"%{food_name}%")
             )
         stmt = stmt.order_by(Recipe.created_at.desc())
         result = await self.session.execute(stmt)
