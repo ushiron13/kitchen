@@ -1,5 +1,6 @@
 import { StrictMode, useState, useEffect, useCallback } from 'react'
 import { createRoot } from 'react-dom/client'
+import { makeLocalApi } from './lib/localApi'
 
 const API_KEY_STORAGE = 'kitchen_api_key'
 
@@ -74,13 +75,6 @@ interface Recipe {
   updated_at: string
 }
 
-interface UserProfile {
-  family_composition: string | null
-  food_preferences: string | null
-  allergies: string | null
-  updated_at: string
-}
-
 interface ShoppingItem {
   name: string
   in_stock: boolean
@@ -114,81 +108,7 @@ function getStep(unit: string): number {
   return 1
 }
 
-// ---- API helpers ----
-function makeApi(apiKey: string) {
-  const headers = { 'X-API-Key': apiKey, 'Content-Type': 'application/json' }
-
-  async function req<T>(url: string, init?: RequestInit): Promise<T> {
-    const r = await fetch(url, { ...init, headers: { ...headers, ...(init?.headers ?? {}) } })
-    if (!r.ok) throw new Error(await r.text())
-    return r.json()
-  }
-
-  return {
-    // Stock
-    getFoods: () => req<Food[]>('/api/v1/foods'),
-    createFood: (p: { name: string; category: string; default_shelf_days?: number }) =>
-      req<Food>('/api/v1/foods', { method: 'POST', body: JSON.stringify(p) }),
-    updateFood: (id: number, p: { name?: string; category?: string; default_shelf_days?: number | null }) =>
-      req<Food>(`/api/v1/foods/${id}`, { method: 'PATCH', body: JSON.stringify(p) }),
-    deleteFood: (id: number) =>
-      fetch(`/api/v1/foods/${id}`, { method: 'DELETE', headers }).then(async r => {
-        if (!r.ok) {
-          try { const b = await r.json(); throw new Error(b.detail ?? '削除失敗') }
-          catch (e) { if (e instanceof Error) throw e; throw new Error('削除失敗') }
-        }
-      }),
-    getStock: () => req<StockItem[]>('/api/v1/stock'),
-    createStock: (p: { food_id: number; quantity: number; unit: string; expiry_date?: string; purchased_date?: string; category?: string }) =>
-      req<StockItem>('/api/v1/stock', { method: 'POST', body: JSON.stringify(p) }),
-    updateStock: (id: number, p: { quantity?: number; unit?: string; expiry_date?: string | null; purchased_date?: string | null; category?: string | null }) =>
-      req<StockItem>(`/api/v1/stock/${id}`, { method: 'PATCH', body: JSON.stringify(p) }),
-    consumeStock: (itemId: number, delta: number) =>
-      req<StockItem>(`/api/v1/stock/${itemId}/transactions`, {
-        method: 'POST',
-        body: JSON.stringify({ tx_type: 'consume', quantity_delta: -Math.abs(delta) }),
-      }),
-    deleteStock: (itemId: number) =>
-      fetch(`/api/v1/stock/${itemId}`, { method: 'DELETE', headers }).then(r => { if (!r.ok) throw new Error() }),
-
-    // Meal Plans
-    createMealPlan: (p: { start_date: string; days: number; meal_types: string[]; preferences?: string }) =>
-      req<MealPlan>('/api/v1/meal-plans', { method: 'POST', body: JSON.stringify(p) }),
-    getMealPlans: () => req<MealPlan[]>('/api/v1/meal-plans'),
-    getMealPlan: (id: number) => req<MealPlan>(`/api/v1/meal-plans/${id}`),
-    deleteMealPlan: (planId: number) =>
-      fetch(`/api/v1/meal-plans/${planId}`, { method: 'DELETE', headers }).then(r => { if (!r.ok) throw new Error() }),
-    deleteMeal: (mealId: number) =>
-      fetch(`/api/v1/meals/${mealId}`, { method: 'DELETE', headers }).then(r => { if (!r.ok) throw new Error() }),
-    updateMealStatus: (mealId: number, s: 'planned' | 'cooked' | 'skipped') =>
-      fetch(`/api/v1/meals/${mealId}/status`, { method: 'PATCH', headers, body: JSON.stringify({ status: s }) })
-        .then(r => { if (!r.ok) throw new Error() }),
-    getShoppingList: (planId: number) => req<ShoppingList>(`/api/v1/meal-plans/${planId}/shopping-list`),
-
-    // Recipes
-    generateRecipe: (mealId: number) =>
-      req<Recipe>(`/api/v1/meals/${mealId}/recipe`, { method: 'POST' }),
-    getRecipe: (id: number) => req<Recipe>(`/api/v1/recipes/${id}`),
-    listRecipes: (q?: string, foodName?: string) => {
-      const params = new URLSearchParams()
-      if (q) params.set('q', q)
-      if (foodName) params.set('food_name', foodName)
-      return req<Recipe[]>(`/api/v1/recipes?${params}`)
-    },
-    suggestRecipes: (foodNames: string[], count = 1) =>
-      req<Recipe[]>('/api/v1/recipes/suggest', {
-        method: 'POST',
-        body: JSON.stringify({ food_names: foodNames, count }),
-      }),
-
-    // Profile
-    getProfile: () => req<UserProfile>('/api/v1/profile'),
-    updateProfile: (p: { family_composition?: string | null; food_preferences?: string | null; allergies?: string | null }) =>
-      req<UserProfile>('/api/v1/profile', { method: 'PUT', body: JSON.stringify(p) }),
-  }
-}
-
-type Api = ReturnType<typeof makeApi>
+type Api = ReturnType<typeof makeLocalApi>
 
 // ---- Styles ----
 const S = {
@@ -1382,16 +1302,17 @@ function BottomNav({ page, setPage }: { page: Page; setPage: (p: Page) => void }
 function LoginForm({ onLogin }: { onLogin: (key: string) => void }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', fontFamily: 'sans-serif' }}>
-      <div style={{ textAlign: 'center' }}>
+      <div style={{ textAlign: 'center', padding: '0 24px' }}>
         <h1 style={{ marginBottom: 8 }}>Kitchen Manager</h1>
-        <p style={{ color: '#666', marginBottom: 20 }}>APIキーを入力してください</p>
+        <p style={{ color: '#666', marginBottom: 4 }}>Anthropic API キーを入力してください</p>
+        <p style={{ color: '#aaa', fontSize: 12, marginBottom: 20 }}>キーはこのデバイス内にのみ保存されます</p>
         <form onSubmit={e => {
           e.preventDefault()
           const key = (e.currentTarget.elements.namedItem('key') as HTMLInputElement).value.trim()
           if (key) { localStorage.setItem(API_KEY_STORAGE, key); onLogin(key) }
         }} style={{ display: 'flex', gap: 8 }}>
-          <input name="key" type="password" placeholder="X-API-Key" style={{ ...S.input, width: 260 }} />
-          <button type="submit" style={S.btn()}>ログイン</button>
+          <input name="key" type="password" placeholder="sk-ant-..." style={{ ...S.input, width: 260 }} />
+          <button type="submit" style={S.btn()}>開始</button>
         </form>
       </div>
     </div>
@@ -1406,7 +1327,7 @@ function App() {
 
   if (!apiKey) return <LoginForm onLogin={setApiKey} />
 
-  const api = makeApi(apiKey)
+  const api = makeLocalApi(apiKey)
   return (
     <div style={{ paddingTop: isOnline ? 0 : 36, paddingBottom: 56 }}>
       {!isOnline && (
